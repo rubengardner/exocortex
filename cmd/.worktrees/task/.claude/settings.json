@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "exocortex status task waiting; printf '\\a'"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "exocortex status task working"
+      }
+    ]
+  }
+}
