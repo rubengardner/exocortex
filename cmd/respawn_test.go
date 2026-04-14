@@ -8,27 +8,26 @@ import (
 )
 
 type fakeRegistryRespawn struct {
-	agents           []registry.Agent
-	tmuxTargetID     string
-	tmuxTargetVal    string
-	nvimTargetCleared bool
+	nuclei              []registry.Nucleus
+	updatedNeuronTarget string
+	removedNeuronID     string
 }
 
 func (f *fakeRegistryRespawn) Load() (*registry.Registry, error) {
-	return &registry.Registry{Agents: f.agents}, nil
+	return &registry.Registry{Nuclei: f.nuclei}, nil
 }
-func (f *fakeRegistryRespawn) Add(a registry.Agent) error { return nil }
-func (f *fakeRegistryRespawn) Delete(id string) error     { return nil }
+func (f *fakeRegistryRespawn) Add(n registry.Nucleus) error { return nil }
+func (f *fakeRegistryRespawn) Delete(id string) error       { return nil }
 func (f *fakeRegistryRespawn) UpdateStatus(id, status string) error { return nil }
-func (f *fakeRegistryRespawn) UpdateNvimTarget(id, target string) error {
-	if target == "" {
-		f.nvimTargetCleared = true
-	}
+func (f *fakeRegistryRespawn) AddNeuron(nucleusID string, neuron registry.Neuron) error {
 	return nil
 }
-func (f *fakeRegistryRespawn) UpdateTmuxTarget(id, target string) error {
-	f.tmuxTargetID = id
-	f.tmuxTargetVal = target
+func (f *fakeRegistryRespawn) RemoveNeuron(nucleusID, neuronID string) error {
+	f.removedNeuronID = neuronID
+	return nil
+}
+func (f *fakeRegistryRespawn) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	f.updatedNeuronTarget = target
 	return nil
 }
 
@@ -57,9 +56,20 @@ func (t *fakeTmuxRespawn) WindowExists(target string) (bool, error) {
 func (t *fakeTmuxRespawn) CurrentTarget() (string, error)            { return "", nil }
 func (t *fakeTmuxRespawn) CapturePane(target string) (string, error) { return "", nil }
 
+func sampleNucleusRespawn(id, tmuxTarget string) registry.Nucleus {
+	return registry.Nucleus{
+		ID:              id,
+		WorktreePath:    "/repo/.worktrees/" + id,
+		TaskDescription: "fix bug",
+		Neurons: []registry.Neuron{
+			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: tmuxTarget, Status: "idle"},
+		},
+	}
+}
+
 func TestRespawn_WindowGone_CreatesNew(t *testing.T) {
-	reg := &fakeRegistryRespawn{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123", TaskDescription: "fix bug"},
+	reg := &fakeRegistryRespawn{nuclei: []registry.Nucleus{
+		sampleNucleusRespawn("abc123", "main:1.0"),
 	}}
 	tm := &fakeTmuxRespawn{windowExistsResult: false, newWindowTarget: "main:2.0"}
 
@@ -74,8 +84,8 @@ func TestRespawn_WindowGone_CreatesNew(t *testing.T) {
 }
 
 func TestRespawn_WindowAlive_DoesNothing(t *testing.T) {
-	reg := &fakeRegistryRespawn{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryRespawn{nuclei: []registry.Nucleus{
+		sampleNucleusRespawn("abc123", "main:1.0"),
 	}}
 	tm := &fakeTmuxRespawn{windowExistsResult: true}
 
@@ -89,36 +99,35 @@ func TestRespawn_WindowAlive_DoesNothing(t *testing.T) {
 	}
 }
 
-func TestRespawn_UpdatesTmuxTarget(t *testing.T) {
-	reg := &fakeRegistryRespawn{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
+func TestRespawn_UpdatesNeuronTarget(t *testing.T) {
+	reg := &fakeRegistryRespawn{nuclei: []registry.Nucleus{
+		sampleNucleusRespawn("abc123", "main:1.0"),
 	}}
 	tm := &fakeTmuxRespawn{windowExistsResult: false, newWindowTarget: "main:3.0"}
 
 	_ = executeRespawn("abc123", reg, tm, &strings.Builder{})
-	if reg.tmuxTargetID != "abc123" {
-		t.Fatalf("expected UpdateTmuxTarget called for abc123, got %q", reg.tmuxTargetID)
-	}
-	if reg.tmuxTargetVal != "main:3.0" {
-		t.Fatalf("expected new target main:3.0, got %q", reg.tmuxTargetVal)
+	if reg.updatedNeuronTarget != "main:3.0" {
+		t.Fatalf("expected updated target main:3.0, got %q", reg.updatedNeuronTarget)
 	}
 }
 
-func TestRespawn_ClearsNvimTarget(t *testing.T) {
-	reg := &fakeRegistryRespawn{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0", NvimTarget: "main:2.0", WorktreePath: "/repo/.worktrees/abc123"},
-	}}
+func TestRespawn_RemovesNvimNeuron(t *testing.T) {
+	n := sampleNucleusRespawn("abc123", "main:1.0")
+	n.Neurons = append(n.Neurons, registry.Neuron{
+		ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:2.0",
+	})
+	reg := &fakeRegistryRespawn{nuclei: []registry.Nucleus{n}}
 	tm := &fakeTmuxRespawn{windowExistsResult: false, newWindowTarget: "main:3.0"}
 
 	_ = executeRespawn("abc123", reg, tm, &strings.Builder{})
-	if !reg.nvimTargetCleared {
-		t.Fatal("expected NvimTarget to be cleared on respawn")
+	if reg.removedNeuronID != "nvim" {
+		t.Fatalf("expected nvim neuron removed, got %q", reg.removedNeuronID)
 	}
 }
 
 func TestRespawn_SendsClaudeKeys(t *testing.T) {
-	reg := &fakeRegistryRespawn{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryRespawn{nuclei: []registry.Nucleus{
+		sampleNucleusRespawn("abc123", "main:1.0"),
 	}}
 	tm := &fakeTmuxRespawn{windowExistsResult: false, newWindowTarget: "main:3.0"}
 

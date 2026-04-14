@@ -5,26 +5,27 @@ import (
 	"os"
 )
 
-// detectAgentID identifies the agent whose tmux pane is currently focused.
-// It checks that TMUX_PANE is set (ensuring we are inside a tmux pane), then
-// asks tmux for the current pane's session:window.pane target and matches it
-// against the registry.
-func detectAgentID(reg registrySvc, tm tmuxSvc) (string, error) {
+// detectAgentID identifies the nucleus whose tmux pane is currently focused.
+// It checks that TMUX_PANE is set, then asks tmux for the current pane's target
+// and matches it against all neurons in the registry.
+func detectAgentID(reg nucleusSvc, tm tmuxSvc) (string, error) {
 	if os.Getenv("TMUX_PANE") == "" {
 		return "", fmt.Errorf("not running inside a tmux pane ($TMUX_PANE not set)")
 	}
 	currentTarget, err := tm.CurrentTarget()
 	if err != nil {
-		return "", fmt.Errorf("detect agent: %w", err)
+		return "", fmt.Errorf("detect nucleus: %w", err)
 	}
 	r, err := reg.Load()
 	if err != nil {
 		return "", err
 	}
-	for _, a := range r.Agents {
-		if a.TmuxTarget == currentTarget {
-			return a.ID, nil
+	for _, n := range r.Nuclei {
+		for _, neuron := range n.Neurons {
+			if neuron.TmuxTarget == currentTarget {
+				return n.ID, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("current pane %q is not a known agent pane", currentTarget)
+	return "", fmt.Errorf("current pane %q is not a known nucleus pane", currentTarget)
 }

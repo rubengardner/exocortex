@@ -22,11 +22,12 @@ type tmuxSvc interface {
 	CapturePane(target string) (string, error)
 }
 
-type registrySvc interface {
+type nucleusSvc interface {
 	Load() (*registry.Registry, error)
-	Add(a registry.Agent) error
+	Add(n registry.Nucleus) error
 	Delete(id string) error
 	UpdateStatus(id, status string) error
-	UpdateNvimTarget(id, target string) error
-	UpdateTmuxTarget(id, target string) error
+	AddNeuron(nucleusID string, neuron registry.Neuron) error
+	RemoveNeuron(nucleusID, neuronID string) error
+	UpdateNeuronTarget(nucleusID, neuronID, target string) error
 }

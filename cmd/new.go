@@ -15,7 +15,7 @@ import (
 
 var newCmd = &cobra.Command{
 	Use:   "new",
-	Short: "Create a new agent in a git worktree and tmux pane",
+	Short: "Create a new nucleus in a git worktree and tmux pane",
 	RunE:  runNew,
 }
 
@@ -39,9 +39,9 @@ func runNew(cmd *cobra.Command, args []string) error {
 	return executeNew(newTask, newRepo, newBranch, "", reg, gt, tm, cmd.OutOrStdout())
 }
 
-// executeNew creates a new agent. claudeConfigDir, when non-empty, is the path
-// passed as CLAUDE_CONFIG_DIR when launching Claude Code (selects which profile to use).
-func executeNew(task, repoArg, branch, claudeConfigDir string, reg registrySvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+// executeNew creates a new nucleus with a single Claude neuron. claudeConfigDir,
+// when non-empty, is passed as CLAUDE_CONFIG_DIR when launching Claude Code.
+func executeNew(task, repoArg, branch, claudeConfigDir string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
 	repoPath, err := filepath.Abs(repoArg)
 	if err != nil {
 		return fmt.Errorf("resolve repo path: %w", err)
@@ -52,7 +52,7 @@ func executeNew(task, repoArg, branch, claudeConfigDir string, reg registrySvc, 
 		return err
 	}
 
-	id := uniqueID(task, existing.Agents)
+	id := uniqueID(task, existing.Nuclei)
 
 	if branch == "" {
 		branch = "agent/" + id
@@ -70,20 +70,17 @@ func executeNew(task, repoArg, branch, claudeConfigDir string, reg registrySvc, 
 		return fmt.Errorf("git worktree add: %w", err)
 	}
 
-	// Write Claude Code hooks into the worktree — warn on failure, do not abort.
-	// Uses .claude-work/ as the settings directory; change to ".claude" if needed.
+	// Write Claude Code hooks — warn on failure, do not abort.
 	if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
 		fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
 	}
 
 	target, err := tm.NewWindow(worktreePath, task)
 	if err != nil {
-		// Best-effort cleanup of the worktree we just created.
 		_ = gt.RemoveWorktree(repoPath, worktreePath)
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
 
-	// Auto-start Claude Code in the new window, using the selected profile if set.
 	claudeCmd := "claude"
 	if claudeConfigDir != "" {
 		claudeCmd = "CLAUDE_CONFIG_DIR=" + claudeConfigDir + " claude"
@@ -92,22 +89,29 @@ func executeNew(task, repoArg, branch, claudeConfigDir string, reg registrySvc, 
 		fmt.Fprintf(out, "warning: could not start claude: %v\n", err)
 	}
 
-	agent := registry.Agent{
+	nucleus := registry.Nucleus{
 		ID:              id,
 		RepoPath:        repoPath,
 		WorktreePath:    worktreePath,
 		Branch:          branch,
 		TaskDescription: task,
-		TmuxTarget:      target,
-		Profile:         claudeConfigDir,
-		Status:          "idle",
-		CreatedAt:       time.Now().UTC(),
+		Neurons: []registry.Neuron{
+			{
+				ID:         "c1",
+				Type:       registry.NeuronClaude,
+				TmuxTarget: target,
+				Profile:    claudeConfigDir,
+				Status:     "idle",
+			},
+		},
+		Status:    "idle",
+		CreatedAt: time.Now().UTC(),
 	}
 
-	if err := reg.Add(agent); err != nil {
+	if err := reg.Add(nucleus); err != nil {
 		return fmt.Errorf("registry add: %w", err)
 	}
 
-	fmt.Fprintf(out, "created agent %s\n", id)
+	fmt.Fprintf(out, "created nucleus %s\n", id)
 	return nil
 }

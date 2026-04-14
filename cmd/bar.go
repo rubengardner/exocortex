@@ -9,9 +9,9 @@ import (
 
 var barCmd = &cobra.Command{
 	Use:   "bar",
-	Short: "Print tmux status-bar fragment for waiting agents",
+	Short: "Print tmux status-bar fragment for waiting nuclei",
 	Long: "Reads the registry and prints a tmux-formatted fragment.\n" +
-		"Output when agents are waiting: #[fg=yellow] N waiting #[default]\n" +
+		"Output when nuclei are waiting: #[fg=yellow] N waiting #[default]\n" +
 		"Output when none waiting: empty (disappears from status bar cleanly).\n" +
 		"Designed for use in tmux status-right: set -g status-right \"#(exocortex bar)\"",
 	Args: cobra.NoArgs,
@@ -31,14 +31,14 @@ func runBar(cmd *cobra.Command, args []string) error {
 
 // barOutput returns the tmux status fragment, or empty string when nothing is waiting.
 // Errors are swallowed — a broken bar is worse than a silent one.
-func barOutput(reg registrySvc) (string, error) {
+func barOutput(reg nucleusSvc) (string, error) {
 	r, err := reg.Load()
 	if err != nil {
 		return "", err
 	}
 	count := 0
-	for _, a := range r.Agents {
-		if a.Status == "waiting" {
+	for _, n := range r.Nuclei {
+		if n.Status == "waiting" {
 			count++
 		}
 	}

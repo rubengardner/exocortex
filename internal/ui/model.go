@@ -49,7 +49,7 @@ const (
 // Services holds the injectable side-effect functions the model calls.
 // Populated by cmd/ui.go with real infrastructure; replaced in tests with stubs.
 type Services struct {
-	LoadAgents   func() ([]registry.Agent, error)
+	LoadNuclei   func() ([]registry.Nucleus, error)
 	LoadRepos    func() ([]string, error)          // nil disables the repo picker
 	LoadProfiles func() (map[string]string, error) // nil disables the profile picker
 	// LoadJiraBoard fetches the kanban board. Returns ordered column names alongside the issues map.
@@ -57,18 +57,18 @@ type Services struct {
 	// LoadJiraIssue fetches a single issue's description as Markdown. nil disables the detail view.
 	LoadJiraIssue func(key string) (markdown string, err error)
 	CapturePane   func(tmuxTarget string) (string, error) // nil disables live preview
-	CreateAgent   func(task, repo, branch, profile string) error
-	RemoveAgent   func(id string) error
-	GotoAgent     func(id string) error
+	CreateNucleus func(task, repo, branch, profile string) error
+	RemoveNucleus func(id string) error
+	GotoNucleus   func(id string) error
 	OpenNvim      func(id string) error
 	CloseNvim     func(id string) error // nil disables binding
-	RespawnAgent  func(id string) error // reopen tmux window; nil disables binding
+	RespawnNucleus func(id string) error // reopen tmux window; nil disables binding
 }
 
 // --- messages ----------------------------------------------------------------
 
-type agentsLoadedMsg struct {
-	agents []registry.Agent
+type nucleiLoadedMsg struct {
+	nuclei []registry.Nucleus
 	err    error
 }
 
@@ -115,7 +115,7 @@ type Model struct {
 	services Services
 	keys     KeyMap
 	help     help.Model
-	agents   []registry.Agent
+	nuclei   []registry.Nucleus
 
 	cursor int
 	state  viewState
@@ -194,16 +194,16 @@ func New(svc Services) Model {
 // LastErr returns the last transient error message, if any.
 func (m Model) LastErr() string { return m.lastErr }
 
-// Cursor returns the index of the currently selected agent.
+// Cursor returns the index of the currently selected nucleus.
 func (m Model) Cursor() int { return m.cursor }
 
 // State returns the current view state.
 func (m Model) State() ViewState { return m.state }
 
 // Init issues the first data load. The preview tick starts automatically
-// after the first successful agent load so it doesn't interfere with tests.
+// after the first successful nucleus load so it doesn't interfere with tests.
 func (m Model) Init() tea.Cmd {
-	return m.loadAgentsCmd()
+	return m.loadNucleiCmd()
 }
 
 // --- Update ------------------------------------------------------------------
@@ -217,15 +217,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Width = msg.Width
 		return m, nil
 
-	case agentsLoadedMsg:
+	case nucleiLoadedMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
 			return m, nil
 		}
-		firstLoad := len(m.agents) == 0 && len(msg.agents) > 0
-		m.agents = msg.agents
-		if m.cursor >= len(m.agents) && len(m.agents) > 0 {
-			m.cursor = len(m.agents) - 1
+		firstLoad := len(m.nuclei) == 0 && len(msg.nuclei) > 0
+		m.nuclei = msg.nuclei
+		if m.cursor >= len(m.nuclei) && len(m.nuclei) > 0 {
+			m.cursor = len(m.nuclei) - 1
 		}
 		// Kick off the preview tick once, on first successful load.
 		// The tick is self-perpetuating — it reschedules itself each fire.
@@ -311,12 +311,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionDoneMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
-			return m, m.loadAgentsCmd()
+			return m, m.loadNucleiCmd()
 		}
 		if msg.quitAfter {
 			return m, tea.Quit
 		}
-		return m, m.loadAgentsCmd()
+		return m, m.loadNucleiCmd()
 
 	case tea.KeyMsg:
 		// Clear transient error on any keypress.
@@ -363,14 +363,14 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.capturePaneCmd()
 
 	case matchKey(msg, m.keys.Down):
-		if m.cursor < len(m.agents)-1 {
+		if m.cursor < len(m.nuclei)-1 {
 			m.cursor++
 			m.paneContent = ""
 		}
 		return m, m.capturePaneCmd()
 
 	case matchKey(msg, m.keys.Refresh):
-		return m, m.loadAgentsCmd()
+		return m, m.loadNucleiCmd()
 
 	case matchKey(msg, m.keys.New):
 		m.formTask.Reset()
@@ -389,49 +389,49 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.transitionAfterRepo()
 
 	case matchKey(msg, m.keys.Delete):
-		if len(m.agents) == 0 {
+		if len(m.nuclei) == 0 {
 			return m, nil
 		}
-		m.confirmID = m.agents[m.cursor].ID
+		m.confirmID = m.nuclei[m.cursor].ID
 		m.state = stateConfirmDelete
 		return m, nil
 
 	case matchKey(msg, m.keys.Goto):
-		if len(m.agents) == 0 {
+		if len(m.nuclei) == 0 {
 			return m, nil
 		}
-		id := m.agents[m.cursor].ID
-		svc := m.services.GotoAgent
+		id := m.nuclei[m.cursor].ID
+		svc := m.services.GotoNucleus
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
 		}
 
 	case matchKey(msg, m.keys.Nvim):
-		if len(m.agents) == 0 {
+		if len(m.nuclei) == 0 {
 			return m, nil
 		}
-		id := m.agents[m.cursor].ID
+		id := m.nuclei[m.cursor].ID
 		svc := m.services.OpenNvim
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
 		}
 
 	case matchKey(msg, m.keys.CloseNvim):
-		if len(m.agents) == 0 || m.services.CloseNvim == nil {
+		if len(m.nuclei) == 0 || m.services.CloseNvim == nil {
 			return m, nil
 		}
-		id := m.agents[m.cursor].ID
+		id := m.nuclei[m.cursor].ID
 		svc := m.services.CloseNvim
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
 		}
 
 	case matchKey(msg, m.keys.Respawn):
-		if len(m.agents) == 0 || m.services.RespawnAgent == nil {
+		if len(m.nuclei) == 0 || m.services.RespawnNucleus == nil {
 			return m, nil
 		}
-		id := m.agents[m.cursor].ID
-		svc := m.services.RespawnAgent
+		id := m.nuclei[m.cursor].ID
+		svc := m.services.RespawnNucleus
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
 		}
@@ -482,7 +482,7 @@ func (m Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		branch := strings.TrimSpace(m.formBranch.Value())
-		svc := m.services.CreateAgent
+		svc := m.services.CreateNucleus
 		repo := m.selectedRepo
 		profile := m.selectedProfile
 		m.state = stateList
@@ -505,7 +505,7 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchKey(msg, m.keys.Confirm):
 		id := m.confirmID
-		svc := m.services.RemoveAgent
+		svc := m.services.RemoveNucleus
 		m.state = stateList
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
@@ -570,7 +570,7 @@ func (m Model) viewMain() string {
 }
 
 func (m Model) viewHeader() string {
-	count := fmt.Sprintf("%d agent(s)", len(m.agents))
+	count := fmt.Sprintf("%d nucleus(i)", len(m.nuclei))
 	left := StyleHeader.Render("◈  EXOCORTEX")
 	right := StyleMuted.Render(count)
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -581,25 +581,25 @@ func (m Model) viewHeader() string {
 }
 
 func (m Model) viewList(width int) string {
-	if len(m.agents) == 0 {
-		return StyleDim.Render("  no agents yet\n  press n to create one")
+	if len(m.nuclei) == 0 {
+		return StyleDim.Render("  no nuclei yet\n  press n to create one")
 	}
 	var sb strings.Builder
-	for i, a := range m.agents {
-		dot := StatusDot(a.Status)
-		task := truncate(a.TaskDescription, width-14)
-		age := fmtAge(a.CreatedAt)
+	for i, n := range m.nuclei {
+		dot := StatusDot(n.Status)
+		task := truncate(n.TaskDescription, width-14)
+		age := fmtAge(n.CreatedAt)
 
 		line1 := fmt.Sprintf(" %s %-*s", dot, width-10, task)
-		line2 := StyleDim.Render(fmt.Sprintf("   %-*s %s", width-12, a.ID, age))
+		line2 := StyleDim.Render(fmt.Sprintf("   %-*s %s", width-12, n.ID, age))
 
 		row := line1 + "\n" + line2
 		if i == m.cursor {
 			row = StyleSelected.Width(width).Render(line1) + "\n" +
-				StyleSelected.Width(width).Foreground(ColorDim).Render("  "+a.ID+" "+age)
+				StyleSelected.Width(width).Foreground(ColorDim).Render("  "+n.ID+" "+age)
 		}
 		sb.WriteString(row)
-		if i < len(m.agents)-1 {
+		if i < len(m.nuclei)-1 {
 			sb.WriteString("\n")
 		}
 	}
@@ -607,30 +607,34 @@ func (m Model) viewList(width int) string {
 }
 
 func (m Model) viewDetail(width int) string {
-	if len(m.agents) == 0 {
+	if len(m.nuclei) == 0 {
 		return ""
 	}
-	a := m.agents[m.cursor]
+	n := m.nuclei[m.cursor]
 
 	var sb strings.Builder
 
 	// Compact header: id, task, branch, status.
-	sb.WriteString(StyleTitle.Render(truncate(a.TaskDescription, width-4)) + "\n")
+	sb.WriteString(StyleTitle.Render(truncate(n.TaskDescription, width-4)) + "\n")
 	sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-4, 4, 60))) + "\n")
 	field := func(label, value string) string {
 		return StyleLabel.Render(label) + StyleValue.Render(truncate(value, width-16)) + "\n"
 	}
-	sb.WriteString(field("ID", a.ID))
-	sb.WriteString(field("Branch", a.Branch))
-	sb.WriteString(StyleLabel.Render("Status") + StatusDot(a.Status) + " " + a.Status + "\n")
-	sb.WriteString(field("Claude", a.TmuxTarget))
-	nvimVal := a.NvimTarget
-	if nvimVal == "" {
-		nvimVal = "—"
+	sb.WriteString(field("ID", n.ID))
+	sb.WriteString(field("Branch", n.Branch))
+	sb.WriteString(StyleLabel.Render("Status") + StatusDot(n.Status) + " " + n.Status + "\n")
+	primaryTarget := "—"
+	if primary := n.PrimaryNeuron(); primary != nil {
+		primaryTarget = primary.TmuxTarget
+	}
+	sb.WriteString(field("Claude", primaryTarget))
+	nvimVal := "—"
+	if nvim := n.NvimNeuron(); nvim != nil && nvim.TmuxTarget != "" {
+		nvimVal = nvim.TmuxTarget
 	}
 	sb.WriteString(field("Nvim", nvimVal))
 
-	headerLines := 7 // title + divider + task + branch + status + claude + nvim
+	headerLines := 7 // title + divider + id + branch + status + claude + nvim
 
 	// Live preview section.
 	previewHeaderLines := 2 // blank + separator
@@ -695,7 +699,7 @@ func (m Model) viewHelp() string {
 
 func (m Model) viewNewForm() string {
 	var sb strings.Builder
-	sb.WriteString(StyleTitle.Render("New Agent") + "\n\n")
+	sb.WriteString(StyleTitle.Render("New Nucleus") + "\n\n")
 	if m.selectedProfile != "" {
 		profilePath := m.profilePaths[m.selectedProfile]
 		sb.WriteString(StyleLabel.Render("Profile") + StyleValue.Render(m.selectedProfile))
@@ -719,9 +723,9 @@ func (m Model) viewNewForm() string {
 
 func (m Model) viewConfirm() string {
 	id := m.confirmID
-	return StyleTitle.Render("Remove agent?") + "\n\n" +
-		StyleValue.Render("Agent ") + StyleError.Render(id) + StyleValue.Render(" will be removed.\n") +
-		StyleValue.Render("Its tmux pane and git worktree will be deleted.\n\n") +
+	return StyleTitle.Render("Remove nucleus?") + "\n\n" +
+		StyleValue.Render("Nucleus ") + StyleError.Render(id) + StyleValue.Render(" will be removed.\n") +
+		StyleValue.Render("All tmux panes and the git worktree will be deleted.\n\n") +
 		StyleMuted.Render("y") + "  confirm   " +
 		StyleMuted.Render("any other key") + " cancel"
 }
@@ -746,10 +750,15 @@ func (m Model) tickCmd() tea.Cmd {
 }
 
 func (m Model) capturePaneCmd() tea.Cmd {
-	if m.services.CapturePane == nil || len(m.agents) == 0 || !m.previewEnabled {
+	if m.services.CapturePane == nil || len(m.nuclei) == 0 || !m.previewEnabled {
 		return nil
 	}
-	target := m.agents[m.cursor].TmuxTarget
+	n := m.nuclei[m.cursor]
+	primary := n.PrimaryNeuron()
+	if primary == nil {
+		return nil
+	}
+	target := primary.TmuxTarget
 	svc := m.services.CapturePane
 	return func() tea.Msg {
 		content, err := svc(target)
@@ -757,11 +766,11 @@ func (m Model) capturePaneCmd() tea.Cmd {
 	}
 }
 
-func (m Model) loadAgentsCmd() tea.Cmd {
-	svc := m.services.LoadAgents
+func (m Model) loadNucleiCmd() tea.Cmd {
+	svc := m.services.LoadNuclei
 	return func() tea.Msg {
-		agents, err := svc()
-		return agentsLoadedMsg{agents: agents, err: err}
+		nuclei, err := svc()
+		return nucleiLoadedMsg{nuclei: nuclei, err: err}
 	}
 }
 

@@ -4,7 +4,7 @@ import (
 	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
-// registryAdapter binds the path-based registry functions to the registrySvc interface.
+// registryAdapter binds the path-based registry functions to the nucleusSvc interface.
 type registryAdapter struct {
 	path string
 }
@@ -13,8 +13,8 @@ func (a *registryAdapter) Load() (*registry.Registry, error) {
 	return registry.Load(a.path)
 }
 
-func (a *registryAdapter) Add(agent registry.Agent) error {
-	return registry.Add(a.path, agent)
+func (a *registryAdapter) Add(n registry.Nucleus) error {
+	return registry.Add(a.path, n)
 }
 
 func (a *registryAdapter) Delete(id string) error {
@@ -25,10 +25,14 @@ func (a *registryAdapter) UpdateStatus(id, status string) error {
 	return registry.UpdateStatus(a.path, id, status)
 }
 
-func (a *registryAdapter) UpdateNvimTarget(id, target string) error {
-	return registry.UpdateNvimTarget(a.path, id, target)
+func (a *registryAdapter) AddNeuron(nucleusID string, neuron registry.Neuron) error {
+	return registry.AddNeuron(a.path, nucleusID, neuron)
 }
 
-func (a *registryAdapter) UpdateTmuxTarget(id, target string) error {
-	return registry.UpdateTmuxTarget(a.path, id, target)
+func (a *registryAdapter) RemoveNeuron(nucleusID, neuronID string) error {
+	return registry.RemoveNeuron(a.path, nucleusID, neuronID)
+}
+
+func (a *registryAdapter) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	return registry.UpdateNeuronTarget(a.path, nucleusID, neuronID, target)
 }

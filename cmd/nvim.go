@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	igit "github.com/ruben_gardner/exocortex/internal/git"
-	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/ruben_gardner/exocortex/internal/registry"
+	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
 var nvimCloseCmd = &cobra.Command{
 	Use:   "nvim-close [id]",
-	Short: "Kill the nvim window for an agent",
+	Short: "Kill the nvim window for a nucleus",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runNvimClose,
 }
@@ -26,26 +26,27 @@ func runNvimClose(cmd *cobra.Command, args []string) error {
 	return executeCloseNvim(id, reg, tm)
 }
 
-func executeCloseNvim(id string, reg registrySvc, tm tmuxSvc) error {
+func executeCloseNvim(id string, reg nucleusSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
 	}
-	agent, err := r.FindByID(id)
+	nucleus, err := r.FindByID(id)
 	if err != nil {
 		return err
 	}
-	if agent.NvimTarget == "" {
+	nvimNeuron := nucleus.NvimNeuron()
+	if nvimNeuron == nil {
 		return nil // nothing to close
 	}
 	// Best-effort kill — the window may already be gone.
-	_ = tm.KillPane(agent.NvimTarget)
-	return reg.UpdateNvimTarget(id, "")
+	_ = tm.KillPane(nvimNeuron.TmuxTarget)
+	return reg.RemoveNeuron(id, nvimNeuron.ID)
 }
 
 var nvimCmd = &cobra.Command{
 	Use:   "nvim [id]",
-	Short: "Open-or-focus an agent's nvim window (<id>-DEV)",
+	Short: "Open-or-focus a nucleus's nvim window (<id>-DEV)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runNvim,
 }
@@ -61,26 +62,27 @@ func runNvim(cmd *cobra.Command, args []string) error {
 	return executeNvim(id, reg, gt, tm)
 }
 
-func executeNvim(id string, reg registrySvc, gt gitSvc, tm tmuxSvc) error {
+func executeNvim(id string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
 	}
-	agent, err := r.FindByID(id)
+	nucleus, err := r.FindByID(id)
 	if err != nil {
 		return err
 	}
 
-	// If a nvim window was previously opened and is still alive, switch to it.
-	if agent.NvimTarget != "" {
-		exists, err := tm.WindowExists(agent.NvimTarget)
+	// If an nvim neuron exists and its window is still alive, switch to it.
+	nvimNeuron := nucleus.NvimNeuron()
+	if nvimNeuron != nil {
+		exists, err := tm.WindowExists(nvimNeuron.TmuxTarget)
 		if err == nil && exists {
-			return tm.SelectPane(agent.NvimTarget)
+			return tm.SelectPane(nvimNeuron.TmuxTarget)
 		}
 	}
 
 	// Open a new window and launch nvim.
-	files, err := gt.ModifiedFiles(agent.WorktreePath)
+	files, err := gt.ModifiedFiles(nucleus.WorktreePath)
 	if err != nil {
 		return fmt.Errorf("git ls-files: %w", err)
 	}
@@ -89,12 +91,23 @@ func executeNvim(id string, reg registrySvc, gt gitSvc, tm tmuxSvc) error {
 		file = files[0]
 	}
 
-	target, err := tm.NewWindow(agent.WorktreePath, id+"-DEV")
+	target, err := tm.NewWindow(nucleus.WorktreePath, id+"-DEV")
 	if err != nil {
 		return err
 	}
 	if err := tm.SendKeys(target, "nvim "+file); err != nil {
 		return err
 	}
-	return reg.UpdateNvimTarget(id, target)
+
+	// Persist the nvim neuron: update if it already existed (but window was dead),
+	// or add a new one if this is the first time.
+	if nvimNeuron != nil {
+		return reg.UpdateNeuronTarget(id, nvimNeuron.ID, target)
+	}
+	return reg.AddNeuron(id, registry.Neuron{
+		ID:         "nvim",
+		Type:       registry.NeuronNvim,
+		TmuxTarget: target,
+		Status:     "idle",
+	})
 }

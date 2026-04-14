@@ -24,8 +24,10 @@ func (t *fakeTmuxGoto) CurrentTarget() (string, error)                 { return 
 func (t *fakeTmuxGoto) CapturePane(target string) (string, error)      { return "", nil }
 
 func TestRunGoto_SelectsCorrectPane(t *testing.T) {
-	reg := &fakeRegistry{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2"},
+	reg := &fakeRegistry{nuclei: []registry.Nucleus{
+		{ID: "abc123", Neurons: []registry.Neuron{
+			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+		}},
 	}}
 	tm := &fakeTmuxGoto{}
 
@@ -50,13 +52,11 @@ func TestRunGoto_UnknownID(t *testing.T) {
 
 func TestRunGoto_NoArg_UsesCurrentPane(t *testing.T) {
 	t.Setenv("TMUX_PANE", "%1")
-	reg := &fakeRegistry{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.0"},
+	reg := &fakeRegistry{nuclei: []registry.Nucleus{
+		{ID: "abc123", Neurons: []registry.Neuron{
+			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+		}},
 	}}
-	// A tmux fake whose CurrentTarget returns the matching pane target.
-	type detectingTmux struct {
-		fakeTmuxGoto
-	}
 	tm := &fakeTmuxGoto{}
 
 	// With an explicit arg, resolveID returns it directly.
@@ -70,8 +70,10 @@ func TestRunGoto_NoArg_UsesCurrentPane(t *testing.T) {
 }
 
 func TestRunGoto_TmuxError(t *testing.T) {
-	reg := &fakeRegistry{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2"},
+	reg := &fakeRegistry{nuclei: []registry.Nucleus{
+		{ID: "abc123", Neurons: []registry.Neuron{
+			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+		}},
 	}}
 	tm := &fakeTmuxGoto{selectErr: errors.New("pane gone")}
 

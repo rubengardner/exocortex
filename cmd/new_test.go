@@ -8,25 +8,60 @@ import (
 	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
-// --- fakes ---
+// ── shared fake registry (implements nucleusSvc) ─────────────────────────────
 
 type fakeRegistry struct {
-	agents []registry.Agent
-	added  *registry.Agent
-	addErr error
+	nuclei  []registry.Nucleus
+	added   *registry.Nucleus
+	addErr  error
+
+	deletedID     string
+	updatedStatus string
+
+	addedNeuronNucleusID string
+	addedNeuron          *registry.Neuron
+
+	removedNeuronNucleusID string
+	removedNeuronID        string
+
+	updatedNeuronNucleusID string
+	updatedNeuronID        string
+	updatedNeuronTarget    string
 }
 
 func (f *fakeRegistry) Load() (*registry.Registry, error) {
-	return &registry.Registry{Agents: f.agents}, nil
+	return &registry.Registry{Nuclei: f.nuclei}, nil
 }
-func (f *fakeRegistry) Add(a registry.Agent) error {
-	f.added = &a
+func (f *fakeRegistry) Add(n registry.Nucleus) error {
+	f.added = &n
 	return f.addErr
 }
-func (f *fakeRegistry) Delete(id string) error                    { return nil }
-func (f *fakeRegistry) UpdateStatus(id, status string) error      { return nil }
-func (f *fakeRegistry) UpdateNvimTarget(id, target string) error  { return nil }
-func (f *fakeRegistry) UpdateTmuxTarget(id, target string) error  { return nil }
+func (f *fakeRegistry) Delete(id string) error {
+	f.deletedID = id
+	return nil
+}
+func (f *fakeRegistry) UpdateStatus(id, status string) error {
+	f.updatedStatus = status
+	return nil
+}
+func (f *fakeRegistry) AddNeuron(nucleusID string, neuron registry.Neuron) error {
+	f.addedNeuronNucleusID = nucleusID
+	f.addedNeuron = &neuron
+	return nil
+}
+func (f *fakeRegistry) RemoveNeuron(nucleusID, neuronID string) error {
+	f.removedNeuronNucleusID = nucleusID
+	f.removedNeuronID = neuronID
+	return nil
+}
+func (f *fakeRegistry) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	f.updatedNeuronNucleusID = nucleusID
+	f.updatedNeuronID = neuronID
+	f.updatedNeuronTarget = target
+	return nil
+}
+
+// ── shared fake git ────────────────────────────────────────────────────────────
 
 type fakeGit struct {
 	addErr       error
@@ -40,14 +75,14 @@ func (g *fakeGit) AddWorktree(repoPath, worktreePath, branch string, createBranc
 	g.createBranch = createBranch
 	return g.addErr
 }
-func (g *fakeGit) RemoveWorktree(repoPath, worktreePath string) error { return nil }
-func (g *fakeGit) ModifiedFiles(worktreePath string) ([]string, error) { return nil, nil }
-func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error) {
-	return g.branchExists, nil
-}
+func (g *fakeGit) RemoveWorktree(repoPath, worktreePath string) error        { return nil }
+func (g *fakeGit) ModifiedFiles(worktreePath string) ([]string, error)       { return nil, nil }
+func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error)        { return g.branchExists, nil }
+
+// ── shared fake tmux ──────────────────────────────────────────────────────────
 
 type fakeTmux struct {
-	target  string
+	target   string
 	splitErr error
 }
 
@@ -59,9 +94,9 @@ func (t *fakeTmux) WindowExists(target string) (bool, error)        { return fal
 func (t *fakeTmux) CurrentTarget() (string, error)                  { return "", nil }
 func (t *fakeTmux) CapturePane(target string) (string, error)       { return "", nil }
 
-// --- tests ---
+// ── executeNew tests ──────────────────────────────────────────────────────────
 
-func TestRunNew_SavesAgent(t *testing.T) {
+func TestRunNew_SavesNucleus(t *testing.T) {
 	reg := &fakeRegistry{}
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
@@ -77,8 +112,12 @@ func TestRunNew_SavesAgent(t *testing.T) {
 	if reg.added.TaskDescription != "Fix auth bug" {
 		t.Fatalf("wrong task: %s", reg.added.TaskDescription)
 	}
-	if reg.added.TmuxTarget != "main:1.0" {
-		t.Fatalf("wrong tmux target: %s", reg.added.TmuxTarget)
+	primary := reg.added.PrimaryNeuron()
+	if primary == nil {
+		t.Fatal("expected a primary neuron")
+	}
+	if primary.TmuxTarget != "main:1.0" {
+		t.Fatalf("wrong tmux target: %s", primary.TmuxTarget)
 	}
 	if reg.added.Status != "idle" {
 		t.Fatalf("wrong status: %s", reg.added.Status)
@@ -129,7 +168,7 @@ func TestRunNew_PrintsID(t *testing.T) {
 
 	_ = executeNew("my task", ".", "", "", reg, gt, tm, out)
 	if !strings.Contains(out.String(), reg.added.ID) {
-		t.Fatalf("output should contain agent ID, got: %s", out.String())
+		t.Fatalf("output should contain nucleus ID, got: %s", out.String())
 	}
 }
 
@@ -198,6 +237,24 @@ func TestRunNew_SendsClaudeKeys(t *testing.T) {
 	}
 }
 
+func TestRunNew_HasClaudeNeuron(t *testing.T) {
+	reg := &fakeRegistry{}
+	gt := &fakeGit{}
+	tm := &fakeTmux{target: "main:1.0"}
+
+	_ = executeNew("my task", ".", "", "", reg, gt, tm, &strings.Builder{})
+	if reg.added == nil {
+		t.Fatal("nothing saved")
+	}
+	primary := reg.added.PrimaryNeuron()
+	if primary == nil {
+		t.Fatal("expected primary neuron")
+	}
+	if primary.Type != registry.NeuronClaude {
+		t.Fatalf("expected claude neuron type, got %s", primary.Type)
+	}
+}
+
 // fakeTmuxSpy captures SendKeys calls for inspection.
 type fakeTmuxSpy struct {
 	target     string
@@ -217,6 +274,8 @@ func (t *fakeTmuxSpy) SendKeys(target, keys string) error {
 func (t *fakeTmuxSpy) WindowExists(target string) (bool, error)  { return false, nil }
 func (t *fakeTmuxSpy) CurrentTarget() (string, error)            { return "", nil }
 func (t *fakeTmuxSpy) CapturePane(target string) (string, error) { return "", nil }
+
+// ── slug tests ────────────────────────────────────────────────────────────────
 
 func TestSlugify(t *testing.T) {
 	cases := []struct {
@@ -245,8 +304,8 @@ func TestUniqueID_NoCollision(t *testing.T) {
 }
 
 func TestUniqueID_Collision(t *testing.T) {
-	agents := []registry.Agent{{ID: "mytask"}}
-	id := uniqueID("my task", agents)
+	nuclei := []registry.Nucleus{{ID: "mytask"}}
+	id := uniqueID("my task", nuclei)
 	if id == "mytask" {
 		t.Fatal("expected a different id on collision")
 	}

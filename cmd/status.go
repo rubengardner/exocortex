@@ -9,8 +9,8 @@ import (
 
 var statusCmd = &cobra.Command{
 	Use:   "status <id> <status>",
-	Short: "Update an agent's status (hook target)",
-	Long:  "Update an agent's status. Called automatically by Claude Code hooks.\nAccepts: idle | working | waiting | blocked",
+	Short: "Update a nucleus's status (hook target)",
+	Long:  "Update a nucleus's status. Called automatically by Claude Code hooks.\nAccepts: idle | working | waiting | blocked",
 	Args:  cobra.ExactArgs(2),
 	RunE:  runStatus,
 }
@@ -20,7 +20,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	return executeStatus(args[0], args[1], reg)
 }
 
-func executeStatus(id, status string, reg registrySvc) error {
+func executeStatus(id, status string, reg nucleusSvc) error {
 	switch status {
 	case "idle", "working", "waiting", "blocked":
 	default:

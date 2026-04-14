@@ -7,24 +7,29 @@ import (
 )
 
 type fakeRegistryStatus struct {
-	agents        []registry.Agent
+	nuclei        []registry.Nucleus
 	updatedID     string
 	updatedStatus string
 	updateErr     error
 }
 
 func (f *fakeRegistryStatus) Load() (*registry.Registry, error) {
-	return &registry.Registry{Agents: f.agents}, nil
+	return &registry.Registry{Nuclei: f.nuclei}, nil
 }
-func (f *fakeRegistryStatus) Add(a registry.Agent) error { return nil }
-func (f *fakeRegistryStatus) Delete(id string) error     { return nil }
+func (f *fakeRegistryStatus) Add(n registry.Nucleus) error { return nil }
+func (f *fakeRegistryStatus) Delete(id string) error       { return nil }
 func (f *fakeRegistryStatus) UpdateStatus(id, status string) error {
 	f.updatedID = id
 	f.updatedStatus = status
 	return f.updateErr
 }
-func (f *fakeRegistryStatus) UpdateNvimTarget(id, target string) error { return nil }
-func (f *fakeRegistryStatus) UpdateTmuxTarget(id, target string) error { return nil }
+func (f *fakeRegistryStatus) AddNeuron(nucleusID string, neuron registry.Neuron) error {
+	return nil
+}
+func (f *fakeRegistryStatus) RemoveNeuron(nucleusID, neuronID string) error { return nil }
+func (f *fakeRegistryStatus) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	return nil
+}
 
 func TestStatusCmd_UpdatesRegistry(t *testing.T) {
 	reg := &fakeRegistryStatus{}

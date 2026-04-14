@@ -16,21 +16,23 @@ func TestRunList_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out.String(), "no agents") {
+	if !strings.Contains(out.String(), "no nuclei") {
 		t.Fatalf("expected empty state message, got: %s", out.String())
 	}
 }
 
-func TestRunList_ShowsAgents(t *testing.T) {
+func TestRunList_ShowsNuclei(t *testing.T) {
 	reg := &fakeRegistry{
-		agents: []registry.Agent{
+		nuclei: []registry.Nucleus{
 			{
 				ID:              "fixaut",
-				Branch:          "feat/fixaut",
+				Branch:          "task/fixaut",
 				TaskDescription: "Fix auth bug",
 				Status:          "idle",
-				TmuxTarget:      "main:1.0",
-				CreatedAt:       time.Now(),
+				Neurons: []registry.Neuron{
+					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},
+				},
+				CreatedAt: time.Now(),
 			},
 		},
 	}
@@ -40,7 +42,7 @@ func TestRunList_ShowsAgents(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	output := out.String()
-	for _, want := range []string{"fixaut", "feat/fixaut", "Fix auth bug", "idle", "main:1.0"} {
+	for _, want := range []string{"fixaut", "task/fixaut", "Fix auth bug", "idle", "main:1.0"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("expected output to contain %q\ngot: %s", want, output)
 		}

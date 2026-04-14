@@ -8,22 +8,25 @@ import (
 )
 
 type fakeRegistryRemove struct {
-	agents    []registry.Agent
+	nuclei    []registry.Nucleus
 	deletedID string
 	deleteErr error
 }
 
 func (f *fakeRegistryRemove) Load() (*registry.Registry, error) {
-	return &registry.Registry{Agents: f.agents}, nil
+	return &registry.Registry{Nuclei: f.nuclei}, nil
 }
-func (f *fakeRegistryRemove) Add(a registry.Agent) error { return nil }
+func (f *fakeRegistryRemove) Add(n registry.Nucleus) error { return nil }
 func (f *fakeRegistryRemove) Delete(id string) error {
 	f.deletedID = id
 	return f.deleteErr
 }
-func (f *fakeRegistryRemove) UpdateStatus(id, status string) error     { return nil }
-func (f *fakeRegistryRemove) UpdateNvimTarget(id, target string) error { return nil }
-func (f *fakeRegistryRemove) UpdateTmuxTarget(id, target string) error { return nil }
+func (f *fakeRegistryRemove) UpdateStatus(id, status string) error                    { return nil }
+func (f *fakeRegistryRemove) AddNeuron(nucleusID string, neuron registry.Neuron) error { return nil }
+func (f *fakeRegistryRemove) RemoveNeuron(nucleusID, neuronID string) error            { return nil }
+func (f *fakeRegistryRemove) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	return nil
+}
 
 type fakeGitRemove struct {
 	removeCalled bool
@@ -41,8 +44,8 @@ func (g *fakeGitRemove) ModifiedFiles(worktreePath string) ([]string, error) { r
 func (g *fakeGitRemove) BranchExists(repoPath, branch string) (bool, error)  { return false, nil }
 
 type fakeTmuxRemove struct {
-	killCalled   bool
-	killErr      error
+	killCalled    bool
+	killErr       error
 	killedTargets []string
 }
 
@@ -58,9 +61,12 @@ func (t *fakeTmuxRemove) WindowExists(target string) (bool, error)       { retur
 func (t *fakeTmuxRemove) CurrentTarget() (string, error)                 { return "", nil }
 func (t *fakeTmuxRemove) CapturePane(target string) (string, error)      { return "", nil }
 
-func TestRunRemove_KillsPane(t *testing.T) {
-	reg := &fakeRegistryRemove{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
+func TestRunRemove_KillsAllNeuronPanes(t *testing.T) {
+	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
+		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+			}},
 	}}
 	gt := &fakeGitRemove{}
 	tm := &fakeTmuxRemove{}
@@ -74,9 +80,32 @@ func TestRunRemove_KillsPane(t *testing.T) {
 	}
 }
 
+func TestRunRemove_KillsAllNeurons(t *testing.T) {
+	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
+		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:2.0"},
+			}},
+	}}
+	gt := &fakeGitRemove{}
+	tm := &fakeTmuxRemove{}
+
+	err := executeRemove("abc123", reg, gt, tm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tm.killedTargets) != 2 {
+		t.Fatalf("expected 2 panes killed, got %d: %v", len(tm.killedTargets), tm.killedTargets)
+	}
+}
+
 func TestRunRemove_RemovesWorktree(t *testing.T) {
-	reg := &fakeRegistryRemove{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
+		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+			}},
 	}}
 	gt := &fakeGitRemove{}
 	tm := &fakeTmuxRemove{}
@@ -88,8 +117,11 @@ func TestRunRemove_RemovesWorktree(t *testing.T) {
 }
 
 func TestRunRemove_DeletesFromRegistry(t *testing.T) {
-	reg := &fakeRegistryRemove{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
+		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+			}},
 	}}
 	gt := &fakeGitRemove{}
 	tm := &fakeTmuxRemove{}
@@ -111,38 +143,17 @@ func TestRunRemove_UnknownID(t *testing.T) {
 	}
 }
 
-func TestRunRemove_KillsNvimWindow(t *testing.T) {
-	reg := &fakeRegistryRemove{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2", NvimTarget: "main:2.0", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
-	}}
-	gt := &fakeGitRemove{}
-	tm := &fakeTmuxRemove{}
-
-	err := executeRemove("abc123", reg, gt, tm)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	found := false
-	for _, target := range tm.killedTargets {
-		if target == "main:2.0" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected main:2.0 (NvimTarget) to be killed, killed: %v", tm.killedTargets)
-	}
-}
-
 func TestRunRemove_TmuxError_StillRemovesWorktreeAndRegistry(t *testing.T) {
-	// tmux pane may already be gone; we should still clean up git and registry.
-	reg := &fakeRegistryRemove{agents: []registry.Agent{
-		{ID: "abc123", TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
+		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+			}},
 	}}
 	gt := &fakeGitRemove{}
 	tm := &fakeTmuxRemove{killErr: errors.New("no such pane")}
 
 	err := executeRemove("abc123", reg, gt, tm)
-	// Should succeed with a warning, not a hard failure.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
