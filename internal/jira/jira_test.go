@@ -120,6 +120,74 @@ func TestFetchBoard_EmptyProject(t *testing.T) {
 	}
 }
 
+func TestFetchIssue_ParsesMetadata(t *testing.T) {
+	body := map[string]interface{}{
+		"key": "PROJ-42",
+		"fields": map[string]interface{}{
+			"summary":  "Fix authentication bug",
+			"status":   map[string]interface{}{"name": "In Progress"},
+			"assignee": map[string]interface{}{"displayName": "Alice Smith"},
+		},
+	}
+	srv := makeServer(http.StatusOK, body)
+	defer srv.Close()
+
+	c := jira.New(srv.URL, "user@example.com", "token")
+	issue, err := c.FetchIssue("PROJ-42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if issue.Key != "PROJ-42" {
+		t.Errorf("expected key PROJ-42, got %s", issue.Key)
+	}
+	if issue.Summary != "Fix authentication bug" {
+		t.Errorf("expected summary 'Fix authentication bug', got %q", issue.Summary)
+	}
+	if issue.Status != "In Progress" {
+		t.Errorf("expected status 'In Progress', got %q", issue.Status)
+	}
+	if issue.Assignee != "Alice Smith" {
+		t.Errorf("expected assignee 'Alice Smith', got %q", issue.Assignee)
+	}
+	wantURL := srv.URL + "/browse/PROJ-42"
+	if issue.URL != wantURL {
+		t.Errorf("expected URL %s, got %s", wantURL, issue.URL)
+	}
+}
+
+func TestFetchIssue_NilAssignee(t *testing.T) {
+	body := map[string]interface{}{
+		"key": "PROJ-7",
+		"fields": map[string]interface{}{
+			"summary":  "Unassigned task",
+			"status":   map[string]interface{}{"name": "To Do"},
+			"assignee": nil,
+		},
+	}
+	srv := makeServer(http.StatusOK, body)
+	defer srv.Close()
+
+	c := jira.New(srv.URL, "user@example.com", "token")
+	issue, err := c.FetchIssue("PROJ-7")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if issue.Assignee != "" {
+		t.Errorf("expected empty assignee, got %q", issue.Assignee)
+	}
+}
+
+func TestFetchIssue_HTTPError(t *testing.T) {
+	srv := makeServer(http.StatusNotFound, nil)
+	defer srv.Close()
+
+	c := jira.New(srv.URL, "user@example.com", "token")
+	_, err := c.FetchIssue("PROJ-99")
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+}
+
 func TestIssueURL(t *testing.T) {
 	srv := makeServer(http.StatusOK, cannedResponse())
 	defer srv.Close()

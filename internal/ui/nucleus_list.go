@@ -131,8 +131,10 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paneContent = ""
 		m.branchModified = nil
 		m.branchAheadCommits = nil
+		m.detailJiraIssue = nil
+		m.detailJiraLoading = m.nuclei[m.cursor].JiraKey != "" && m.services.LoadJiraIssueMeta != nil
 		m.state = stateNucleusDetail
-		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd())
+		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd(), m.loadJiraIssueMetaCmd())
 	}
 	return m, nil
 }
