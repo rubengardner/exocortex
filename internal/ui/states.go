@@ -19,6 +19,7 @@ const (
 	StateNeuronAdd                      // neuron type picker overlay (from detail)
 	StateGitHubView                     // GitHub PR list view
 	StateGitHubPRDetail                 // full-screen GitHub PR detail
+	StateBranchSearch                   // filterable branch picker for review workflow
 )
 
 // Internal aliases — allow the rest of the package to use lowercase names
@@ -36,4 +37,5 @@ const (
 	stateNeuronAdd      = StateNeuronAdd
 	stateGitHubView     = StateGitHubView
 	stateGitHubPRDetail = StateGitHubPRDetail
+	stateBranchSearch   = StateBranchSearch
 )

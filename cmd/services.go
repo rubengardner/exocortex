@@ -11,6 +11,7 @@ type gitSvc interface {
 	ModifiedFiles(worktreePath string) ([]string, error)
 	BranchExists(repoPath, branch string) (bool, error)
 	AheadCommits(worktreePath string) ([]string, error)
+	ListBranches(repoPath string) ([]string, error)
 }
 
 type tmuxSvc interface {

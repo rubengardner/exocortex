@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ruben_gardner/exocortex/internal/github"
 	"github.com/ruben_gardner/exocortex/internal/registry"
 	"github.com/ruben_gardner/exocortex/internal/ui"
 )
@@ -239,6 +240,158 @@ func TestDelete_ConfirmCallsRemove(t *testing.T) {
 	if removed != "nucl1" {
 		t.Fatalf("expected nucl1 removed, got %q", removed)
 	}
+}
+
+// ── review workflow ───────────────────────────────────────────────────────────
+
+// samplePR describes one PR returned by LoadGitHubPRs in review tests.
+type samplePR struct {
+	number int
+	repo   string
+	branch string
+}
+
+// newReviewSvc builds a Services struct with review plumbing but no repo picker.
+// LoadGitHubPRs returns a single PR built from the given samplePR.
+// The returned *reviewRecord is populated by CreateReviewNucleus when called.
+func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewRecord) {
+	rec := &reviewRecord{}
+	svc := ui.Services{
+		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
+		CreateNucleus: func(task, repo, branch, profile string) error { return nil },
+		RemoveNucleus: func(id string) error { return nil },
+		GotoNucleus:   func(id string) error { return nil },
+		OpenNvim:      func(id string) error { return nil },
+		// No LoadRepos → repo picker skipped → goes directly to branch search.
+		ListBranches: func(_ string) ([]string, error) {
+			return []string{"main", pr.branch}, nil
+		},
+		CreateReviewNucleus: func(task, repo, branch, profile string, prNumber int, prRepo string) error {
+			rec.branch = branch
+			rec.prNumber = prNumber
+			rec.prRepo = prRepo
+			return nil
+		},
+		LoadGitHubPRs: func() ([]github.PR, error) {
+			return []github.PR{{Number: pr.number, Repo: pr.repo, Branch: pr.branch, State: "open"}}, nil
+		},
+	}
+	return svc, rec
+}
+
+type reviewRecord struct {
+	branch   string
+	prNumber int
+	prRepo   string
+}
+
+// enterGitHubViewWithPRs presses G, runs the LoadGitHubPRs cmd, and feeds the result back.
+func enterGitHubViewWithPRs(m tea.Model) tea.Model {
+	m2, cmd := press(m, "G")
+	if cmd == nil {
+		return m2
+	}
+	msg := cmd()
+	m3, _ := m2.Update(msg)
+	return m3
+}
+
+func TestReview_StateBranchSearchIsExported(t *testing.T) {
+	if ui.StateBranchSearch == ui.StateList {
+		t.Fatal("StateBranchSearch must differ from StateList")
+	}
+	if ui.StateBranchSearch == ui.StateGitHubView {
+		t.Fatal("StateBranchSearch must differ from StateGitHubView")
+	}
+}
+
+func TestReview_RKeyInGitHubView_TransitionsToBranchSearch(t *testing.T) {
+	nuclei := sampleNuclei()
+	svc, _ := newReviewSvc(nuclei, samplePR{number: 42, repo: "owner/repo", branch: "feat/oauth"})
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+
+	// G → StateGitHubView + load PRs
+	m4 := enterGitHubViewWithPRs(m3)
+	if m4.(ui.Model).State() != ui.StateGitHubView {
+		t.Fatalf("expected StateGitHubView, got %v", m4.(ui.Model).State())
+	}
+
+	// R → review workflow; no repo picker → state becomes StateBranchSearch immediately
+	m5, _ := press(m4, "R")
+	if m5.(ui.Model).State() != ui.StateBranchSearch {
+		t.Fatalf("expected StateBranchSearch after R, got %v", m5.(ui.Model).State())
+	}
+}
+
+func TestReview_BranchSearchEscReturnsToList(t *testing.T) {
+	nuclei := sampleNuclei()
+	svc, _ := newReviewSvc(nuclei, samplePR{number: 1, repo: "a/b", branch: "feat/foo"})
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+
+	m4 := enterGitHubViewWithPRs(m3)
+	m5, _ := press(m4, "R") // → StateBranchSearch
+	m6, _ := pressSpecial(m5, tea.KeyEsc)
+	if m6.(ui.Model).State() != ui.StateList {
+		t.Fatalf("expected StateList after esc, got %v", m6.(ui.Model).State())
+	}
+}
+
+func TestReview_BranchSearchEnterCallsCreateReviewNucleus(t *testing.T) {
+	nuclei := sampleNuclei()
+	svc, rec := newReviewSvc(nuclei, samplePR{number: 7, repo: "org/repo", branch: "feat/oauth"})
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+
+	m4 := enterGitHubViewWithPRs(m3)
+	m5, branchCmd := press(m4, "R") // → StateBranchSearch + loadBranchesCmd
+	if branchCmd != nil {
+		// Drive the async branch load.
+		branchMsg := branchCmd()
+		m5, _ = m5.Update(branchMsg)
+	}
+
+	// Enter selects the first (filtered) branch, fires CreateReviewNucleus cmd.
+	m6, cmd := pressSpecial(m5, tea.KeyEnter)
+	_ = m6
+	if cmd == nil {
+		t.Fatal("expected cmd after enter in branch search")
+	}
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("cmd returned nil msg")
+	}
+
+	if rec.prNumber != 7 {
+		t.Fatalf("expected prNumber=7, got %d", rec.prNumber)
+	}
+	if rec.prRepo != "org/repo" {
+		t.Fatalf("expected prRepo=org/repo, got %s", rec.prRepo)
+	}
+	if rec.branch == "" {
+		t.Fatal("expected branch to be set")
+	}
+}
+
+func TestReview_BranchSearchView_DoesNotPanic(t *testing.T) {
+	nuclei := sampleNuclei()
+	svc, _ := newReviewSvc(nuclei, samplePR{number: 5, repo: "x/y", branch: "main"})
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+
+	m4 := enterGitHubViewWithPRs(m3)
+	m5, _ := press(m4, "R")
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("View() panicked in StateBranchSearch: %v", r)
+		}
+	}()
+	_ = m5.(ui.Model).View()
 }
 
 // ── view smoke tests ──────────────────────────────────────────────────────────

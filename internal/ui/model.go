@@ -40,6 +40,11 @@ type Services struct {
 	LoadGitHubPRs func() ([]github.PR, error)
 	// LoadGitHubPR fetches full detail for one PR; nil disables the detail view.
 	LoadGitHubPR func(repo string, number int) (*github.PRDetail, error)
+	// ListBranches returns local branch names for a repo; used in the review workflow.
+	ListBranches func(repoPath string) ([]string, error)
+	// CreateReviewNucleus creates a nucleus on an existing branch for PR review.
+	// nil disables the R key in the GitHub views.
+	CreateReviewNucleus func(task, repo, branch, profile string, prNumber int, prRepo string) error
 }
 
 // Model is the root Bubble Tea model.
@@ -113,9 +118,21 @@ type Model struct {
 	githubErr      string
 
 	// github PR detail state
-	githubDetailPR     *github.PRDetail
-	githubDetailScroll int
+	githubDetailPR      *github.PRDetail
+	githubDetailScroll  int
 	githubDetailLoading bool
+
+	// review workflow state
+	formMode       string // "" (adhoc) or "review"
+	reviewPRNumber int
+	reviewPRRepo   string
+	reviewPRBranch string // head branch of the PR being reviewed
+
+	// branch search state (StateBranchSearch)
+	branchSearchBranches []string
+	branchSearchFilter   string
+	branchSearchCursor   int
+	branchSearchLoading  bool
 
 	// transient status bar message
 	lastErr string
@@ -214,10 +231,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.profileNames) == 0 {
 				// No profiles configured — skip picker.
 				m.selectedProfile = ""
-				m.state = stateNewOverlay
-				return m, textinput.Blink
+				return m.transitionToFormDest()
 			}
 			m.state = stateProfileSelect
+		}
+		return m, nil
+
+	case branchesLoadedMsg:
+		m.branchSearchLoading = false
+		if msg.err != nil {
+			m.lastErr = msg.err.Error()
+			m.state = stateList
+		} else {
+			m.branchSearchBranches = msg.branches
+			m.branchSearchCursor = 0
 		}
 		return m, nil
 
@@ -333,6 +360,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateGitHubView(msg)
 		case stateGitHubPRDetail:
 			return m.updateGitHubPRDetail(msg)
+		case stateBranchSearch:
+			return m.updateBranchSearch(msg)
 		case stateHelp:
 			// Any key dismisses help.
 			m.state = stateList
@@ -375,6 +404,8 @@ func (m Model) View() string {
 			return m.renderOverlay(base, m.viewRepoSelect())
 		case stateProfileSelect:
 			return m.renderOverlay(base, m.viewProfileSelect())
+		case stateBranchSearch:
+			return m.renderOverlay(base, m.viewBranchSearch())
 		}
 		return base
 	}
@@ -481,6 +512,19 @@ func (m Model) loadBranchInfoCmd() tea.Cmd {
 	return func() tea.Msg {
 		modified, ahead, err := svc(worktreePath)
 		return branchInfoLoadedMsg{modified: modified, aheadCommits: ahead, err: err}
+	}
+}
+
+// loadBranchesCmd fires an async fetch of local branches for the selected repo.
+func (m Model) loadBranchesCmd() tea.Cmd {
+	if m.services.ListBranches == nil || m.selectedRepo == "" {
+		return func() tea.Msg { return branchesLoadedMsg{branches: []string{}} }
+	}
+	svc := m.services.ListBranches
+	repo := m.selectedRepo
+	return func() tea.Msg {
+		branches, err := svc(repo)
+		return branchesLoadedMsg{branches: branches, err: err}
 	}
 }
 

@@ -240,6 +240,51 @@ func TestAheadCommits_ErrorReturnsSilently(t *testing.T) {
 	}
 }
 
+func TestListBranches_Args(t *testing.T) {
+	r := &captureRunner{output: "main\nfeat/foo\n"}
+	g := git.New(r)
+
+	branches, err := g.ListBranches("/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"-C", "/repo", "branch", "--format=%(refname:short)"}
+	if !equalSlice(r.args, want) {
+		t.Fatalf("args mismatch\n got:  %v\n want: %v", r.args, want)
+	}
+	if len(branches) != 2 || branches[0] != "main" || branches[1] != "feat/foo" {
+		t.Fatalf("unexpected branches: %v", branches)
+	}
+}
+
+func TestListBranches_Empty(t *testing.T) {
+	r := &captureRunner{output: ""}
+	g := git.New(r)
+
+	branches, err := g.ListBranches("/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(branches) != 0 {
+		t.Fatalf("expected empty slice, got %v", branches)
+	}
+}
+
+func TestCheckoutExisting_NoCreateBranch(t *testing.T) {
+	r := &captureRunner{}
+	g := git.New(r)
+
+	err := g.CheckoutExisting("/repo", "/repo/.worktrees/review1", "feat/oauth")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Must use no -b flag: git -C <repo> worktree add <path> <branch>
+	want := []string{"-C", "/repo", "worktree", "add", "/repo/.worktrees/review1", "feat/oauth"}
+	if !equalSlice(r.args, want) {
+		t.Fatalf("args mismatch\n got:  %v\n want: %v", r.args, want)
+	}
+}
+
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

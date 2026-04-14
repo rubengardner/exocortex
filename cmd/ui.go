@@ -160,5 +160,18 @@ func buildServices() ui.Services {
 			client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
 			return client.FetchPRDetail(repo, number)
 		},
+		ListBranches: func(repoPath string) ([]string, error) {
+			return gt.ListBranches(repoPath)
+		},
+		CreateReviewNucleus: func(task, repo, branch, profileName string, prNumber int, prRepo string) error {
+			claudeConfigDir := ""
+			if profileName != "" {
+				cfg, err := iconfig.Load(iconfig.DefaultPath())
+				if err == nil {
+					claudeConfigDir = cfg.Profiles[profileName]
+				}
+			}
+			return executeReview(task, repo, branch, claudeConfigDir, prNumber, prRepo, reg, gt, tm, io.Discard)
+		},
 	}
 }

@@ -42,6 +42,13 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.githubDetailLoading = true
 		m.githubDetailPR = nil
 		return m, m.loadGitHubPRDetailCmd(pr.Repo, pr.Number)
+
+	case matchKey(msg, m.keys.Respawn): // R = start review workflow on selected PR
+		if len(m.githubPRs) == 0 || m.services.CreateReviewNucleus == nil {
+			return m, nil
+		}
+		pr := m.githubPRs[m.githubPRCursor]
+		return m.startReviewWorkflow(pr.Number, pr.Repo, pr.Branch)
 	}
 	return m, nil
 }
@@ -109,7 +116,12 @@ func (m Model) viewGitHubStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render("  q back   j/k select   enter detail   r refresh")
+	hint := "  q back   j/k select   enter detail"
+	if m.services.CreateReviewNucleus != nil {
+		hint += "   R review"
+	}
+	hint += "   r refresh"
+	return StyleHelp.Render(hint)
 }
 
 // ── StateGitHubPRDetail ───────────────────────────────────────────────────────
@@ -156,6 +168,13 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.githubDetailScroll < 0 {
 			m.githubDetailScroll = 0
 		}
+
+	case matchKey(msg, m.keys.Respawn): // R = start review workflow on current PR
+		if m.githubDetailPR == nil || m.services.CreateReviewNucleus == nil {
+			return m, nil
+		}
+		d := m.githubDetailPR
+		return m.startReviewWorkflow(d.Number, d.Repo, d.Branch)
 	}
 	return m, nil
 }
@@ -190,7 +209,11 @@ func (m Model) viewGitHubPRDetail() string {
 	}
 	body := strings.Join(lines[start:end], "\n")
 
-	statusBar := StyleHelp.Render("  esc back   j/k scroll   pgdn/pgup page")
+	hint := "  esc back   j/k scroll   pgdn/pgup page"
+	if m.services.CreateReviewNucleus != nil {
+		hint += "   R review"
+	}
+	statusBar := StyleHelp.Render(hint)
 	return lipgloss.JoinVertical(lipgloss.Left, header, meta, body, statusBar)
 }
 

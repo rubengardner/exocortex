@@ -73,3 +73,9 @@ type githubPRDetailLoadedMsg struct {
 	detail *github.PRDetail
 	err    error
 }
+
+// branchesLoadedMsg is emitted when the local branch list fetch completes.
+type branchesLoadedMsg struct {
+	branches []string
+	err      error
+}

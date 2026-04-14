@@ -91,6 +91,24 @@ func (g *Git) AheadCommits(worktreePath string) ([]string, error) {
 	}
 	return strings.Split(out, "\n"), nil
 }
+// ListBranches returns all local branch names in the repo.
+func (g *Git) ListBranches(repoPath string) ([]string, error) {
+	out, err := g.runner.Run("git", "-C", repoPath, "branch", "--format=%(refname:short)")
+	if err != nil {
+		return nil, err
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return []string{}, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// CheckoutExisting adds a worktree for an existing branch without creating a new one.
+func (g *Git) CheckoutExisting(repoPath, worktreePath, branch string) error {
+	return g.AddWorktree(repoPath, worktreePath, branch, false)
+}
+
 // Returns an empty slice if there are none.
 func (g *Git) ModifiedFiles(worktreePath string) ([]string, error) {
 	out, err := g.runner.Run("git", "-C", worktreePath, "ls-files", "-m")

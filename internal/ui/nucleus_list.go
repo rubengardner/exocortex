@@ -36,6 +36,7 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadNucleiCmd()
 
 	case matchKey(msg, m.keys.New):
+		m.formMode = ""
 		m.formTask.Reset()
 		m.formBranch.Reset()
 		m.formTask.Focus()

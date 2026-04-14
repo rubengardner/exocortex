@@ -79,6 +79,7 @@ func (g *fakeGit) RemoveWorktree(repoPath, worktreePath string) error        { r
 func (g *fakeGit) ModifiedFiles(worktreePath string) ([]string, error)       { return nil, nil }
 func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error)        { return g.branchExists, nil }
 func (g *fakeGit) AheadCommits(worktreePath string) ([]string, error)        { return nil, nil }
+func (g *fakeGit) ListBranches(repoPath string) ([]string, error)            { return nil, nil }
 
 // ── shared fake tmux ──────────────────────────────────────────────────────────
 
@@ -309,5 +310,53 @@ func TestUniqueID_Collision(t *testing.T) {
 	id := uniqueID("my task", nuclei)
 	if id == "mytask" {
 		t.Fatal("expected a different id on collision")
+	}
+}
+
+// ── executeReview tests ───────────────────────────────────────────────────────
+
+func TestExecuteReview_SavesNucleusWithPRLinkage(t *testing.T) {
+	reg := &fakeRegistry{}
+	gt := &fakeGit{}
+	tm := &fakeTmux{target: "main:1.0"}
+	out := &strings.Builder{}
+
+	err := executeReview("Review PR #42", ".", "feat/oauth", "", 42, "owner/repo", reg, gt, tm, out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reg.added == nil {
+		t.Fatal("expected registry.Add to be called")
+	}
+	if reg.added.PRNumber != 42 {
+		t.Fatalf("expected PRNumber=42, got %d", reg.added.PRNumber)
+	}
+	if reg.added.PRRepo != "owner/repo" {
+		t.Fatalf("expected PRRepo=owner/repo, got %s", reg.added.PRRepo)
+	}
+	if reg.added.Branch != "feat/oauth" {
+		t.Fatalf("expected branch feat/oauth, got %s", reg.added.Branch)
+	}
+}
+
+func TestExecuteReview_DoesNotCreateBranch(t *testing.T) {
+	reg := &fakeRegistry{}
+	gt := &fakeGit{}
+	tm := &fakeTmux{target: "main:1.0"}
+
+	_ = executeReview("Review PR #7", ".", "existing-branch", "", 7, "org/repo", reg, gt, tm, &strings.Builder{})
+	if gt.createBranch {
+		t.Fatal("review workflow must not create a new branch")
+	}
+}
+
+func TestExecuteReview_GitError_Propagates(t *testing.T) {
+	reg := &fakeRegistry{}
+	gt := &fakeGit{addErr: errors.New("checkout failed")}
+	tm := &fakeTmux{}
+
+	err := executeReview("Review PR #1", ".", "feat/foo", "", 1, "org/repo", reg, gt, tm, &strings.Builder{})
+	if err == nil {
+		t.Fatal("expected error from git")
 	}
 }

@@ -115,3 +115,72 @@ func executeNew(task, repoArg, branch, claudeConfigDir string, reg nucleusSvc, g
 	fmt.Fprintf(out, "created nucleus %s\n", id)
 	return nil
 }
+
+// executeReview creates a Nucleus on an existing branch for PR review.
+// Unlike executeNew, it checks out an existing branch without -b.
+func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, prRepo string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+	repoPath, err := filepath.Abs(repoArg)
+	if err != nil {
+		return fmt.Errorf("resolve repo path: %w", err)
+	}
+
+	existing, err := reg.Load()
+	if err != nil {
+		return err
+	}
+
+	id := uniqueID(task, existing.Nuclei)
+	worktreePath := filepath.Join(repoPath, ".worktrees", id)
+
+	// Check out existing branch — no -b flag.
+	if err := gt.AddWorktree(repoPath, worktreePath, branch, false); err != nil {
+		return fmt.Errorf("git worktree add: %w", err)
+	}
+
+	// Write Claude Code hooks — warn on failure, do not abort.
+	if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
+		fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
+	}
+
+	target, err := tm.NewWindow(worktreePath, task)
+	if err != nil {
+		_ = gt.RemoveWorktree(repoPath, worktreePath)
+		return fmt.Errorf("tmux new-window: %w", err)
+	}
+
+	claudeCmd := "claude"
+	if claudeConfigDir != "" {
+		claudeCmd = "CLAUDE_CONFIG_DIR=" + claudeConfigDir + " claude"
+	}
+	if err := tm.SendKeys(target, claudeCmd); err != nil {
+		fmt.Fprintf(out, "warning: could not start claude: %v\n", err)
+	}
+
+	nucleus := registry.Nucleus{
+		ID:              id,
+		RepoPath:        repoPath,
+		WorktreePath:    worktreePath,
+		Branch:          branch,
+		TaskDescription: task,
+		PRNumber:        prNumber,
+		PRRepo:          prRepo,
+		Neurons: []registry.Neuron{
+			{
+				ID:         "c1",
+				Type:       registry.NeuronClaude,
+				TmuxTarget: target,
+				Profile:    claudeConfigDir,
+				Status:     "idle",
+			},
+		},
+		Status:    "idle",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := reg.Add(nucleus); err != nil {
+		return fmt.Errorf("registry add: %w", err)
+	}
+
+	fmt.Fprintf(out, "created nucleus %s\n", id)
+	return nil
+}
