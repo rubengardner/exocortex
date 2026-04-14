@@ -16,7 +16,7 @@ import (
 func newTestModel(nuclei []registry.Nucleus) ui.Model {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -33,7 +33,7 @@ func newTestModel(nuclei []registry.Nucleus) ui.Model {
 func nucleiLoaded(nuclei []registry.Nucleus) tea.Msg {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -129,7 +129,7 @@ func TestNvim_CallsOpenNvim(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { calledID = id; return nil },
@@ -153,7 +153,7 @@ func TestNvimError_SetsLastErr(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return errors.New("nvim gone") },
@@ -217,7 +217,7 @@ func TestDelete_ConfirmCallsRemove(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { removed = id; return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },

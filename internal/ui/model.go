@@ -26,8 +26,10 @@ type Services struct {
 	LoadJiraBoard func() (columns []string, issues map[string][]jira.Issue, err error)
 	// LoadJiraIssue fetches a single issue's description as Markdown; nil disables the detail view.
 	LoadJiraIssue func(key string) (markdown string, err error)
-	CapturePane   func(tmuxTarget string) (string, error) // nil disables live preview
-	CreateNucleus func(task, repo, branch, profile string) error
+	// LoadJiraIssueMeta fetches lightweight issue metadata for the Nucleus detail panel; nil disables it.
+	LoadJiraIssueMeta func(key string) (*jira.Issue, error)
+	CapturePane       func(tmuxTarget string) (string, error) // nil disables live preview
+	CreateNucleus     func(task, repo, branch, profile, jiraKey string) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
@@ -45,6 +47,12 @@ type Services struct {
 	// CreateReviewNucleus creates a nucleus on an existing branch for PR review.
 	// nil disables the R key in the GitHub views.
 	CreateReviewNucleus func(task, repo, branch, profile string, prNumber int, prRepo string) error
+	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
+	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
+	OpenNvimFile func(nucleusID, filePath string, line int) error
+	// BrowserOpen opens the given URL in the system browser (e.g. xdg-open).
+	// nil disables the binding.
+	BrowserOpen func(url string) error
 }
 
 // Model is the root Bubble Tea model.
@@ -97,8 +105,21 @@ type Model struct {
 	jiraDetailKey     string // issue key being shown ("" = closed)
 	jiraDetailTitle   string // "KEY — Summary"
 	jiraDetailMD      string // raw markdown (ADF-converted)
+	jiraDetailURL     string // web URL for "open in browser" (from issue.URL)
 	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
+
+	// Jira context for nucleus creation (set when N is pressed on the board).
+	pendingJiraKey     string // issue key, e.g. "PROJ-42"; "" = no Jira context
+	pendingJiraSummary string // issue summary for pre-filling the task field
+
+	// Jira metadata for the nucleus detail middle panel.
+	detailJiraIssue   *jira.Issue // nil until loaded (or if no JiraKey)
+	detailJiraLoading bool
+
+	// GitHub PR metadata for the nucleus detail middle panel.
+	detailPRDetail  *github.PRDetail // nil until loaded (or if no PRNumber)
+	detailPRLoading bool
 
 	// nucleus detail state
 	detailNeuronIdx int // selected neuron index within the detail view
@@ -118,9 +139,10 @@ type Model struct {
 	githubErr      string
 
 	// github PR detail state
-	githubDetailPR      *github.PRDetail
-	githubDetailScroll  int
-	githubDetailLoading bool
+	githubDetailPR         *github.PRDetail
+	githubDetailScroll     int
+	githubDetailLoading    bool
+	githubDetailFileCursor int // selected file index within d.Files
 
 	// review workflow state
 	formMode       string // "" (adhoc) or "review"
@@ -276,7 +298,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.githubDetailPR = msg.detail
 			m.githubDetailScroll = 0
+			m.githubDetailFileCursor = 0
 			m.state = stateGitHubPRDetail
+		}
+		return m, nil
+
+	case githubPRMetaLoadedMsg:
+		m.detailPRLoading = false
+		if msg.err == nil {
+			m.detailPRDetail = msg.detail
 		}
 		return m, nil
 
@@ -300,6 +330,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jiraDetailMD = msg.markdown
 			m.jiraDetailScroll = 0
 			m.state = stateJiraDetail
+		}
+		return m, nil
+
+	case jiraIssueMetaLoadedMsg:
+		m.detailJiraLoading = false
+		if msg.err == nil {
+			m.detailJiraIssue = msg.issue
 		}
 		return m, nil
 
@@ -550,6 +587,58 @@ func (m Model) loadGitHubPRDetailCmd(repo string, number int) tea.Cmd {
 		detail, err := svc(repo, number)
 		return githubPRDetailLoadedMsg{detail: detail, err: err}
 	}
+}
+
+// loadGitHubPRMetaCmd fires an async fetch of PR metadata for the nucleus
+// detail panel. It is a no-op when the current nucleus has no PRNumber or when
+// the LoadGitHubPR service is not configured.
+func (m Model) loadGitHubPRMetaCmd() tea.Cmd {
+	if m.services.LoadGitHubPR == nil || len(m.nuclei) == 0 {
+		return nil
+	}
+	n := m.nuclei[m.cursor]
+	if n.PRNumber == 0 || n.PRRepo == "" {
+		return nil
+	}
+	svc := m.services.LoadGitHubPR
+	repo := n.PRRepo
+	number := n.PRNumber
+	return func() tea.Msg {
+		detail, err := svc(repo, number)
+		return githubPRMetaLoadedMsg{detail: detail, err: err}
+	}
+}
+
+// loadJiraIssueMetaCmd fires an async fetch of issue metadata for the nucleus
+// detail panel. It is a no-op when the current nucleus has no JiraKey or when
+// the LoadJiraIssueMeta service is not configured.
+func (m Model) loadJiraIssueMetaCmd() tea.Cmd {
+	if m.services.LoadJiraIssueMeta == nil || len(m.nuclei) == 0 {
+		return nil
+	}
+	key := m.nuclei[m.cursor].JiraKey
+	if key == "" {
+		return nil
+	}
+	svc := m.services.LoadJiraIssueMeta
+	return func() tea.Msg {
+		issue, err := svc(key)
+		return jiraIssueMetaLoadedMsg{issue: issue, err: err}
+	}
+}
+
+// openNucleusForm transitions to the new-nucleus form overlay. When a pending
+// Jira key is set, the task and branch fields are pre-filled from the linked
+// issue so the user can confirm or edit before submitting.
+func (m Model) openNucleusForm() (Model, tea.Cmd) {
+	if m.pendingJiraKey != "" {
+		m.formTask.SetValue(m.pendingJiraSummary)
+		m.formTask.CursorEnd()
+		m.formBranch.SetValue("task/" + m.pendingJiraKey + "/")
+		m.formBranch.CursorEnd()
+	}
+	m.state = stateNewOverlay
+	return m, textinput.Blink
 }
 
 // matchKey returns true if the tea.KeyMsg matches the given binding.

@@ -79,3 +79,17 @@ type branchesLoadedMsg struct {
 	branches []string
 	err      error
 }
+
+// jiraIssueMetaLoadedMsg is emitted when a single issue's metadata is fetched
+// for display in the Nucleus detail middle panel.
+type jiraIssueMetaLoadedMsg struct {
+	issue *jira.Issue
+	err   error
+}
+
+// githubPRMetaLoadedMsg is emitted when a PR's detail is fetched for display
+// in the Nucleus detail middle panel.
+type githubPRMetaLoadedMsg struct {
+	detail *github.PRDetail
+	err    error
+}

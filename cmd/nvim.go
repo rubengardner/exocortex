@@ -9,6 +9,54 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// executeNvimFile opens (or focuses) the nucleus's nvim window and jumps to
+// filePath at line. When line <= 0 it opens without a line argument.
+// It follows the same open-or-focus logic as executeNvim.
+func executeNvimFile(id, filePath string, line int, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
+	r, err := reg.Load()
+	if err != nil {
+		return err
+	}
+	nucleus, err := r.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Build the nvim argument: optionally jump to line.
+	nvimArg := filePath
+	if line > 0 {
+		nvimArg = fmt.Sprintf("+%d %s", line, filePath)
+	}
+
+	// If an nvim neuron exists and its window is still alive, send the file open.
+	nvimNeuron := nucleus.NvimNeuron()
+	if nvimNeuron != nil {
+		exists, err := tm.WindowExists(nvimNeuron.TmuxTarget)
+		if err == nil && exists {
+			return tm.SendKeys(nvimNeuron.TmuxTarget, ":e "+nvimArg)
+		}
+	}
+
+	// No live nvim window — open a new one.
+	target, err := tm.NewWindow(nucleus.WorktreePath, id+"-DEV")
+	if err != nil {
+		return err
+	}
+	if err := tm.SendKeys(target, "nvim "+nvimArg); err != nil {
+		return err
+	}
+
+	if nvimNeuron != nil {
+		return reg.UpdateNeuronTarget(id, nvimNeuron.ID, target)
+	}
+	return reg.AddNeuron(id, registry.Neuron{
+		ID:         "nvim",
+		Type:       registry.NeuronNvim,
+		TmuxTarget: target,
+		Status:     "idle",
+	})
+}
+
 var nvimCloseCmd = &cobra.Command{
 	Use:   "nvim-close [id]",
 	Short: "Kill the nvim window for a nucleus",

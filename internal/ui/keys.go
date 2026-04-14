@@ -23,6 +23,7 @@ type KeyMap struct {
 	Board         key.Binding
 	GitHub        key.Binding
 	AddNeuron     key.Binding
+	OpenBrowser   key.Binding
 }
 
 // DefaultKeys returns the standard key bindings.
@@ -86,7 +87,7 @@ func DefaultKeys() KeyMap {
 		),
 		Respawn: key.NewBinding(
 			key.WithKeys("R"),
-			key.WithHelp("R", "respawn window"),
+			key.WithHelp("R", "respawn / review"),
 		),
 		TogglePreview: key.NewBinding(
 			key.WithKeys("p"),
@@ -103,6 +104,10 @@ func DefaultKeys() KeyMap {
 		AddNeuron: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add neuron"),
+		),
+		OpenBrowser: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "open in browser"),
 		),
 	}
 }

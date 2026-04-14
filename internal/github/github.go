@@ -165,6 +165,22 @@ func (c *Client) FetchPRDetail(repo string, number int) (*PRDetail, error) {
 	return detail, nil
 }
 
+// repoFromPRURL extracts "owner/repo" from a GitHub PR html_url.
+// e.g. "https://github.com/BadgerMaps/badger-go/pull/3636" → "BadgerMaps/badger-go"
+// This is more reliable than base.repo.full_name which the search API may omit.
+func repoFromPRURL(htmlURL string) string {
+	u, err := url.Parse(htmlURL)
+	if err != nil {
+		return ""
+	}
+	// Path: "/owner/repo/pull/N" — take first two segments.
+	parts := strings.SplitN(strings.TrimPrefix(u.Path, "/"), "/", 4)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
 // ── raw JSON shapes ────────────────────────────────────────────────────────────
 
 type searchItem struct {
@@ -185,7 +201,10 @@ type searchItem struct {
 		} `json:"repo"`
 	} `json:"head"`
 	Base struct {
-		Ref string `json:"ref"`
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
 	} `json:"base"`
 }
 
@@ -202,7 +221,7 @@ func (it searchItem) toPR() PR {
 		Number:    it.Number,
 		Title:     it.Title,
 		Author:    it.User.Login,
-		Repo:      it.Head.Repo.FullName,
+		Repo:      repoFromPRURL(it.HTMLURL), // parse from html_url — always correct
 		Branch:    it.Head.Ref,
 		Base:      it.Base.Ref,
 		State:     state,
@@ -234,7 +253,10 @@ type prDetailRaw struct {
 		} `json:"repo"`
 	} `json:"head"`
 	Base struct {
-		Ref string `json:"ref"`
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
 	} `json:"base"`
 }
 
@@ -252,7 +274,7 @@ func (r prDetailRaw) toPRDetail() *PRDetail {
 			Number:    r.Number,
 			Title:     r.Title,
 			Author:    r.User.Login,
-			Repo:      r.Head.Repo.FullName,
+			Repo:      r.Base.Repo.FullName, // PR lives in base repo, not head/fork
 			Branch:    r.Head.Ref,
 			Base:      r.Base.Ref,
 			State:     state,

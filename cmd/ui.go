@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
@@ -59,7 +60,7 @@ func buildServices() ui.Services {
 			}
 			return r.Nuclei, nil
 		},
-		CreateNucleus: func(task, repo, branch, profileName string) error {
+		CreateNucleus: func(task, repo, branch, profileName, jiraKey string) error {
 			claudeConfigDir := ""
 			if profileName != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -67,7 +68,7 @@ func buildServices() ui.Services {
 					claudeConfigDir = cfg.Profiles[profileName]
 				}
 			}
-			return executeNew(task, repo, branch, claudeConfigDir, reg, gt, tm, io.Discard)
+			return executeNew(task, repo, branch, claudeConfigDir, jiraKey, reg, gt, tm, io.Discard)
 		},
 		RemoveNucleus: func(id string) error {
 			return executeRemove(id, reg, gt, tm)
@@ -144,6 +145,14 @@ func buildServices() ui.Services {
 			client := ijira.New(cfg.Jira.BaseURL, cfg.Jira.Email, cfg.Jira.APIToken)
 			return client.FetchIssueDescription(key)
 		},
+		LoadJiraIssueMeta: func(key string) (*ijira.Issue, error) {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil || cfg.Jira == nil {
+				return nil, err
+			}
+			client := ijira.New(cfg.Jira.BaseURL, cfg.Jira.Email, cfg.Jira.APIToken)
+			return client.FetchIssue(key)
+		},
 		LoadGitHubPRs: func() ([]igithub.PR, error) {
 			cfg, err := iconfig.Load(iconfig.DefaultPath())
 			if err != nil || cfg.GitHub == nil {
@@ -172,6 +181,12 @@ func buildServices() ui.Services {
 				}
 			}
 			return executeReview(task, repo, branch, claudeConfigDir, prNumber, prRepo, reg, gt, tm, io.Discard)
+		},
+		OpenNvimFile: func(nucleusID, filePath string, line int) error {
+			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)
+		},
+		BrowserOpen: func(url string) error {
+			return exec.Command("xdg-open", url).Start()
 		},
 	}
 }

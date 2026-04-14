@@ -23,12 +23,30 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Print(`# exocortex tmux integration
 # Add to ~/.tmux.conf then run: tmux source ~/.tmux.conf
 
-# Show waiting-agent count in status bar
+# ── Status bar ────────────────────────────────────────────────────────────────
+# Show nucleus IDs with neuron counts and waiting indicator.
+# Example: cyan "fixaut(2) review(1)" + yellow "1 waiting"
 set -g status-right "#(exocortex bar)"
 set -g status-interval 5
 
-# Toggle agent popup with prefix+t
+# ── Popup TUI ─────────────────────────────────────────────────────────────────
+# Toggle the exocortex TUI in a centered popup with prefix+t.
 bind-key t display-popup -w 80% -h 80% -E "exocortex"
+
+# ── Multi-neuron window names ─────────────────────────────────────────────────
+# Each nucleus opens panes in a dedicated window named after its ID.
+# Disable auto-rename so window names set by exocortex are preserved.
+set-window-option -g automatic-rename off
+
+# Show pane index and title in the pane border when multiple panes are open.
+# Neuron type is sent as the pane title by exocortex (e.g. "claude", "nvim").
+set-option -g pane-border-status top
+set-option -g pane-border-format " #{pane_index}: #{pane_title} "
+
+# Optional: give each nucleus window a distinct colour in the status bar.
+# Exocortex names windows <id>-CLAUDE, <id>-DEV, <id>-SH for each neuron type,
+# so you can match on the suffix with a format string if desired.
+# set-window-option -g window-status-current-format " #W #[fg=cyan]● "
 `)
 	return nil
 }

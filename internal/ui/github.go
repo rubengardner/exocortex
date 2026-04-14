@@ -127,6 +127,8 @@ func (m Model) viewGitHubStatusBar() string {
 // ── StateGitHubPRDetail ───────────────────────────────────────────────────────
 
 // updateGitHubPRDetail handles key events for the PR detail view.
+// j/k navigate between changed files; pgdn/pgup scroll the patch body.
+// e opens the selected file in the linked nucleus's nvim window.
 func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchKey(msg, m.keys.Cancel), matchKey(msg, m.keys.Quit):
@@ -134,25 +136,18 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case matchKey(msg, m.keys.Up):
-		if m.githubDetailScroll > 0 {
-			m.githubDetailScroll--
+		if m.githubDetailFileCursor > 0 {
+			m.githubDetailFileCursor--
 		}
 
 	case matchKey(msg, m.keys.Down):
-		if m.githubDetailPR != nil {
-			lines := prDetailLines(m.githubDetailPR, m.width)
-			maxScroll := len(lines) - m.contentHeight() + 4
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.githubDetailScroll < maxScroll {
-				m.githubDetailScroll++
-			}
+		if m.githubDetailPR != nil && m.githubDetailFileCursor < len(m.githubDetailPR.Files)-1 {
+			m.githubDetailFileCursor++
 		}
 
 	case msg.String() == "pgdown":
 		if m.githubDetailPR != nil {
-			lines := prDetailLines(m.githubDetailPR, m.width)
+			lines := prDetailLines(m.githubDetailPR, m.width, -1)
 			maxScroll := len(lines) - m.contentHeight() + 4
 			if maxScroll < 0 {
 				maxScroll = 0
@@ -175,8 +170,81 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		d := m.githubDetailPR
 		return m.startReviewWorkflow(d.Number, d.Repo, d.Branch)
+
+	case matchKey(msg, m.keys.Nvim):
+		if m.githubDetailPR == nil || m.services.OpenNvimFile == nil {
+			return m, nil
+		}
+		nucleusID := m.prLinkedNucleusID(m.githubDetailPR)
+		if nucleusID == "" {
+			m.lastErr = "no nucleus linked to this PR"
+			return m, nil
+		}
+		files := m.githubDetailPR.Files
+		if len(files) == 0 {
+			return m, nil
+		}
+		idx := m.githubDetailFileCursor
+		if idx >= len(files) {
+			idx = 0
+		}
+		f := files[idx]
+		svc := m.services.OpenNvimFile
+		nid := nucleusID
+		path := f.Path
+		line := firstHunkLine(f.Patch)
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(nid, path, line)}
+		}
 	}
 	return m, nil
+}
+
+// prLinkedNucleusID returns the ID of the nucleus linked to the given PR,
+// or "" when none is found.
+func (m Model) prLinkedNucleusID(pr *github.PRDetail) string {
+	for _, n := range m.nuclei {
+		if n.PRNumber == pr.Number && n.PRRepo == pr.Repo {
+			return n.ID
+		}
+	}
+	return ""
+}
+
+// firstHunkLine parses a unified diff patch and returns the target line number
+// of the first added or context line, so nvim can jump to the right place.
+// Falls back to 1 when the patch is empty or unparseable.
+func firstHunkLine(patch string) int {
+	for _, l := range strings.SplitN(patch, "\n", 20) {
+		// @@ -a,b +c,d @@ — extract c
+		if strings.HasPrefix(l, "@@") {
+			parts := strings.Fields(l)
+			for _, p := range parts {
+				if strings.HasPrefix(p, "+") && p != "+++ " {
+					num := strings.TrimPrefix(p, "+")
+					if comma := strings.IndexByte(num, ','); comma != -1 {
+						num = num[:comma]
+					}
+					if n := parseInt(num); n > 0 {
+						return n
+					}
+				}
+			}
+		}
+	}
+	return 1
+}
+
+// parseInt parses a decimal string, returning 0 on error.
+func parseInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // viewGitHubPRDetail renders the full-screen PR detail.
@@ -193,7 +261,8 @@ func (m Model) viewGitHubPRDetail() string {
 	meta := StyleDim.Render(fmt.Sprintf("  %s  →  %s  by %s   +%d -%d  %d file(s)",
 		d.Branch, d.Base, d.Author, d.Additions, d.Deletions, d.ChangedFiles))
 
-	lines := prDetailLines(d, m.width)
+	cursor := m.githubDetailFileCursor
+	lines := prDetailLines(d, m.width, cursor)
 	h := m.contentHeight() - 3 // header + meta + status
 	if h < 1 {
 		h = 1
@@ -209,16 +278,21 @@ func (m Model) viewGitHubPRDetail() string {
 	}
 	body := strings.Join(lines[start:end], "\n")
 
-	hint := "  esc back   j/k scroll   pgdn/pgup page"
+	hint := "  esc back   j/k file   pgdn/pgup scroll"
 	if m.services.CreateReviewNucleus != nil {
 		hint += "   R review"
+	}
+	linked := m.prLinkedNucleusID(d)
+	if m.services.OpenNvimFile != nil && linked != "" {
+		hint += "   e open in nvim"
 	}
 	statusBar := StyleHelp.Render(hint)
 	return lipgloss.JoinVertical(lipgloss.Left, header, meta, body, statusBar)
 }
 
 // prDetailLines builds the scrollable content lines for a PR detail.
-func prDetailLines(d *github.PRDetail, width int) []string {
+// selectedFile highlights the file at that index (pass -1 for no highlight).
+func prDetailLines(d *github.PRDetail, width, selectedFile int) []string {
 	var lines []string
 
 	// Body
@@ -234,11 +308,19 @@ func prDetailLines(d *github.PRDetail, width int) []string {
 	lines = append(lines, StyleTitle.Render(fmt.Sprintf("Changed Files (%d)", len(d.Files))))
 	lines = append(lines, StyleDim.Render(strings.Repeat("─", clamp(width-4, 4, 80))))
 
-	for _, f := range d.Files {
+	for i, f := range d.Files {
 		statusColor := prFileStatusColor(f.Status)
-		fileLine := lipgloss.NewStyle().Foreground(statusColor).Render(
-			fmt.Sprintf("  %s %-*s +%d -%d", prFileStatusChar(f.Status), width-24, truncate(f.Path, width-24), f.Additions, f.Deletions),
-		)
+		cursor := "  "
+		if i == selectedFile {
+			cursor = "▶ "
+		}
+		fileRow := fmt.Sprintf("%s%s %-*s +%d -%d", cursor, prFileStatusChar(f.Status), width-26, truncate(f.Path, width-26), f.Additions, f.Deletions)
+		var fileLine string
+		if i == selectedFile {
+			fileLine = StyleSelected.Width(width).Render(fileRow)
+		} else {
+			fileLine = lipgloss.NewStyle().Foreground(statusColor).Render(fileRow)
+		}
 		lines = append(lines, fileLine)
 		if f.Patch != "" {
 			for _, pl := range strings.Split(f.Patch, "\n") {

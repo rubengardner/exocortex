@@ -49,24 +49,26 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string, team
 	for i, s := range statuses {
 		quoted[i] = fmt.Sprintf("%q", s)
 	}
+	statusJQL := fmt.Sprintf("status in (%s)", strings.Join(quoted, ","))
 
+	// Always use the search endpoint with an explicit status filter so we only
+	// fetch the issues we actually want to display. This is simpler and faster
+	// than fetching all board issues and filtering client-side.
 	var endpoint, jql string
 	if boardID > 0 {
-		// Use the Agile board endpoint — no status filter in JQL so we never
-		// send status names that might not match the remote values. Issues are
-		// grouped client-side by their actual status.name, then only the
-		// configured statuses are displayed as columns.
 		endpoint = fmt.Sprintf("%s/rest/agile/1.0/board/%d/issue", c.baseURL, boardID)
+		jql = statusJQL
 		if teamID != "" {
-			jql = fmt.Sprintf(`cf[10001]=%q ORDER BY updated DESC`, teamID)
-		} else {
-			jql = "ORDER BY updated DESC"
+			// Include issues belonging to the team OR with no team set, so that
+			// unassigned-team tickets (customfield_10001 = null) are not dropped.
+			jql += fmt.Sprintf(` AND (cf[10001]=%q OR cf[10001] is EMPTY)`, teamID)
 		}
+		jql += " ORDER BY updated DESC"
 	} else {
 		endpoint = c.baseURL + "/rest/api/3/search/jql"
-		jql = fmt.Sprintf(`project=%s AND status in (%s)`, project, strings.Join(quoted, ","))
+		jql = fmt.Sprintf(`project=%s AND %s`, project, statusJQL)
 		if teamID != "" {
-			jql += fmt.Sprintf(` AND cf[10001]=%q`, teamID)
+			jql += fmt.Sprintf(` AND (cf[10001]=%q OR cf[10001] is EMPTY)`, teamID)
 		}
 		jql += " ORDER BY updated DESC"
 	}
@@ -79,7 +81,7 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string, team
 	q := url.Values{}
 	q.Set("jql", jql)
 	q.Set("fields", "summary,status,assignee")
-	q.Set("maxResults", "50")
+	q.Set("maxResults", "200")
 	req.URL.RawQuery = q.Encode()
 
 	creds := base64.StdEncoding.EncodeToString([]byte(c.email + ":" + c.apiToken))
@@ -118,8 +120,11 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string, team
 
 	// Pre-populate every requested status bucket (including empties).
 	board := make(map[string][]Issue, len(statuses))
+	// Case-insensitive lookup: lowercase(configuredStatus) → configuredStatus.
+	lowerToStatus := make(map[string]string, len(statuses))
 	for _, s := range statuses {
 		board[s] = nil
+		lowerToStatus[strings.ToLower(s)] = s
 	}
 
 	for _, raw := range result.Issues {
@@ -134,7 +139,9 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string, team
 			Assignee: assignee,
 			URL:      issueURL(c.baseURL, raw.Key),
 		}
-		board[issue.Status] = append(board[issue.Status], issue)
+		if col, ok := lowerToStatus[strings.ToLower(issue.Status)]; ok {
+			board[col] = append(board[col], issue)
+		}
 	}
 
 	return board, nil
@@ -142,6 +149,59 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string, team
 
 func issueURL(baseURL, key string) string {
 	return baseURL + "/browse/" + key
+}
+
+// FetchIssue fetches the basic metadata of a single issue. It returns a
+// populated Issue struct, useful for pre-filling the Nucleus creation form.
+func (c *Client) FetchIssue(key string) (*Issue, error) {
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("%s/rest/api/3/issue/%s?fields=summary,status,assignee", c.baseURL, key), nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: create request: %w", err)
+	}
+
+	creds := base64.StdEncoding.EncodeToString([]byte(c.email + ":" + c.apiToken))
+	req.Header.Set("Authorization", "Basic "+creds)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Key    string `json:"key"`
+		Fields struct {
+			Summary string `json:"summary"`
+			Status  struct {
+				Name string `json:"name"`
+			} `json:"status"`
+			Assignee *struct {
+				DisplayName string `json:"displayName"`
+			} `json:"assignee"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("jira: decode response: %w", err)
+	}
+
+	assignee := ""
+	if result.Fields.Assignee != nil {
+		assignee = result.Fields.Assignee.DisplayName
+	}
+	return &Issue{
+		Key:      key,
+		Summary:  result.Fields.Summary,
+		Status:   result.Fields.Status.Name,
+		Assignee: assignee,
+		URL:      issueURL(c.baseURL, key),
+	}, nil
 }
 
 // FetchIssueDescription fetches the description of a single issue and returns

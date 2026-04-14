@@ -51,7 +51,10 @@ func makeSearchItem(number int, title, login, repo, head, base string, draft boo
 			"ref":  head,
 			"repo": map[string]interface{}{"full_name": repo},
 		},
-		"base": map[string]interface{}{"ref": base},
+		"base": map[string]interface{}{
+			"ref":  base,
+			"repo": map[string]interface{}{"full_name": repo},
+		},
 		"pull_request": map[string]interface{}{
 			"url": "https://api.github.com/repos/" + repo + "/pulls/42",
 		},
@@ -221,7 +224,10 @@ func prDetailPayload() map[string]interface{} {
 			"ref":  "fix-auth",
 			"repo": map[string]interface{}{"full_name": "org/repo"},
 		},
-		"base": map[string]interface{}{"ref": "main"},
+		"base": map[string]interface{}{
+			"ref":  "main",
+			"repo": map[string]interface{}{"full_name": "org/repo"},
+		},
 	}
 }
 
@@ -325,6 +331,45 @@ func TestFetchPRDetail_ParsesFiles(t *testing.T) {
 	f1 := detail.Files[1]
 	if f1.Status != "added" {
 		t.Errorf("Files[1].Status: got %q, want 'added'", f1.Status)
+	}
+}
+
+func TestListPRs_RepoFromURL_Fork(t *testing.T) {
+	// PR from a fork: head.repo is the fork, but the PR lives in the base repo.
+	// The html_url always points to the base repo — verify we parse it correctly.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		item := map[string]interface{}{
+			"number":     3636,
+			"title":      "My PR",
+			"state":      "open",
+			"draft":      false,
+			"html_url":   "https://github.com/BadgerMaps/badger-go/pull/3636",
+			"merged_at":  nil,
+			"updated_at": "2024-01-15T12:00:00Z",
+			"user":       map[string]interface{}{"login": "alice"},
+			"head": map[string]interface{}{
+				"ref":  "fix-auth",
+				"repo": map[string]interface{}{"full_name": "alice/badger-go"}, // fork
+			},
+			"base": map[string]interface{}{
+				"ref":  "main",
+				"repo": map[string]interface{}{"full_name": ""}, // may be absent
+			},
+		}
+		jsonResp(w, http.StatusOK, map[string]interface{}{"items": []interface{}{item}})
+	}))
+	defer srv.Close()
+
+	c := igithub.New(srv.URL, "token", "")
+	prs, err := c.ListPRs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("expected 1 PR, got %d", len(prs))
+	}
+	if prs[0].Repo != "BadgerMaps/badger-go" {
+		t.Errorf("Repo: got %q, want 'BadgerMaps/badger-go'", prs[0].Repo)
 	}
 }
 

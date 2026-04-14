@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -15,7 +14,10 @@ func (m Model) updateNucleusForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case matchKey(msg, m.keys.Cancel):
-		m.state = stateList
+		returnState := m.formCancelState()
+		m.pendingJiraKey = ""
+		m.pendingJiraSummary = ""
+		m.state = returnState
 		return m, nil
 
 	case matchKey(msg, m.keys.NextField):
@@ -40,9 +42,12 @@ func (m Model) updateNucleusForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		svc := m.services.CreateNucleus
 		repo := m.selectedRepo
 		profile := m.selectedProfile
+		jiraKey := m.pendingJiraKey
+		m.pendingJiraKey = ""
+		m.pendingJiraSummary = ""
 		m.state = stateList
 		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(task, repo, branch, profile)}
+			return actionDoneMsg{err: svc(task, repo, branch, profile, jiraKey)}
 		}
 	}
 
@@ -60,6 +65,9 @@ func (m Model) updateNucleusForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) viewNewForm() string {
 	var sb strings.Builder
 	sb.WriteString(StyleTitle.Render("New Nucleus") + "\n\n")
+	if m.pendingJiraKey != "" {
+		sb.WriteString(StyleLabel.Render("Jira") + StyleValue.Render(m.pendingJiraKey) + "\n\n")
+	}
 	if m.selectedProfile != "" {
 		profilePath := m.profilePaths[m.selectedProfile]
 		sb.WriteString(StyleLabel.Render("Profile") + StyleValue.Render(m.selectedProfile))
@@ -85,7 +93,10 @@ func (m Model) viewNewForm() string {
 func (m Model) updateRepoSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchKey(msg, m.keys.Cancel):
-		m.state = stateList
+		returnState := m.formCancelState()
+		m.pendingJiraKey = ""
+		m.pendingJiraSummary = ""
+		m.state = returnState
 		return m, nil
 	case matchKey(msg, m.keys.Up):
 		if m.repoCursor > 0 {
@@ -136,7 +147,10 @@ func (m Model) viewRepoSelect() string {
 func (m Model) updateProfileSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchKey(msg, m.keys.Cancel):
-		m.state = stateList
+		returnState := m.formCancelState()
+		m.pendingJiraKey = ""
+		m.pendingJiraSummary = ""
+		m.state = returnState
 		return m, nil
 	case matchKey(msg, m.keys.Up):
 		if m.profileCursor > 0 {
@@ -208,8 +222,17 @@ func (m Model) transitionToFormDest() (Model, tea.Cmd) {
 		m.branchSearchLoading = true
 		return m, m.loadBranchesCmd()
 	}
-	m.state = stateNewOverlay
-	return m, textinput.Blink
+	return m.openNucleusForm()
+}
+
+// formCancelState returns the state to return to when the user cancels any
+// step of the new-nucleus creation flow. When a Jira issue is pending, the
+// user is returned to the Jira board instead of the main list.
+func (m Model) formCancelState() viewState {
+	if m.pendingJiraKey != "" {
+		return stateJiraBoard
+	}
+	return stateList
 }
 
 // startReviewWorkflow stores the PR context and begins the repo → profile → branch-search flow.
