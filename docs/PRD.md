@@ -4,7 +4,7 @@ Concept: A terminal-centric command center designed to unify the software develo
 1. Core Nomenclature
    To maintain the biological theme of the Exocortex, the system uses the following hierarchy:
 
-Nucleus (formerly Workspace): The primary organizational unit associated with a specific task or Jira ticket. It acts as the "command hub" for a unique branch and worktree.
+Nucleus: The primary organizational unit associated with a specific task, Jira ticket or Github PR (Or both JIRA and GITHUB or none of them). It acts as the "command hub" for a unique branch and worktree.
 
 Neuron (formerly Agent): Specialized execution instances within a Nucleus. These are terminal-based tools-such as ClaudeCode instances, Neovim sessions, or shell processes-dedicated to solving parts of the task.
 
@@ -29,7 +29,7 @@ Contextual Data: Real-time information on branch status, PR statistics, and envi
 A. The Development Workflow
 Trigger: Creating a Nucleus from a Jira ticket on the integrated Board View.
 
-Automation: The system automatically initializes a new Git Worktree and creates a branch following the standard: task/<jira_ticket_number>/.
+Automation: The system automatically initializes a new Git Worktree and creates a branch following the standard: task/<jira_ticket_number>/ and we manually name the rest of the branch.
 
 Objective: To allow the developer to start coding in a clean, isolated environment without disturbing other active tasks.
 
