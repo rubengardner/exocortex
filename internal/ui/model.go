@@ -42,6 +42,12 @@ type Services struct {
 	LoadGitHubPRs func() ([]github.PR, error)
 	// LoadGitHubPR fetches full detail for one PR; nil disables the detail view.
 	LoadGitHubPR func(repo string, number int) (*github.PRDetail, error)
+	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
+	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
+	OpenNvimFile func(nucleusID, filePath string, line int) error
+	// BrowserOpen opens the given URL in the system browser (e.g. xdg-open).
+	// nil disables the binding.
+	BrowserOpen func(url string) error
 }
 
 // Model is the root Bubble Tea model.
@@ -94,6 +100,7 @@ type Model struct {
 	jiraDetailKey     string // issue key being shown ("" = closed)
 	jiraDetailTitle   string // "KEY — Summary"
 	jiraDetailMD      string // raw markdown (ADF-converted)
+	jiraDetailURL     string // web URL for "open in browser" (from issue.URL)
 	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
 
@@ -104,6 +111,10 @@ type Model struct {
 	// Jira metadata for the nucleus detail middle panel.
 	detailJiraIssue   *jira.Issue // nil until loaded (or if no JiraKey)
 	detailJiraLoading bool
+
+	// GitHub PR metadata for the nucleus detail middle panel.
+	detailPRDetail  *github.PRDetail // nil until loaded (or if no PRNumber)
+	detailPRLoading bool
 
 	// nucleus detail state
 	detailNeuronIdx int // selected neuron index within the detail view
@@ -123,9 +134,10 @@ type Model struct {
 	githubErr      string
 
 	// github PR detail state
-	githubDetailPR     *github.PRDetail
-	githubDetailScroll int
-	githubDetailLoading bool
+	githubDetailPR         *github.PRDetail
+	githubDetailScroll     int
+	githubDetailLoading    bool
+	githubDetailFileCursor int // selected file index within d.Files
 
 	// transient status bar message
 	lastErr string
@@ -258,7 +270,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.githubDetailPR = msg.detail
 			m.githubDetailScroll = 0
+			m.githubDetailFileCursor = 0
 			m.state = stateGitHubPRDetail
+		}
+		return m, nil
+
+	case githubPRMetaLoadedMsg:
+		m.detailPRLoading = false
+		if msg.err == nil {
+			m.detailPRDetail = msg.detail
 		}
 		return m, nil
 
@@ -521,6 +541,26 @@ func (m Model) loadGitHubPRDetailCmd(repo string, number int) tea.Cmd {
 	return func() tea.Msg {
 		detail, err := svc(repo, number)
 		return githubPRDetailLoadedMsg{detail: detail, err: err}
+	}
+}
+
+// loadGitHubPRMetaCmd fires an async fetch of PR metadata for the nucleus
+// detail panel. It is a no-op when the current nucleus has no PRNumber or when
+// the LoadGitHubPR service is not configured.
+func (m Model) loadGitHubPRMetaCmd() tea.Cmd {
+	if m.services.LoadGitHubPR == nil || len(m.nuclei) == 0 {
+		return nil
+	}
+	n := m.nuclei[m.cursor]
+	if n.PRNumber == 0 || n.PRRepo == "" {
+		return nil
+	}
+	svc := m.services.LoadGitHubPR
+	repo := n.PRRepo
+	number := n.PRNumber
+	return func() tea.Msg {
+		detail, err := svc(repo, number)
+		return githubPRMetaLoadedMsg{detail: detail, err: err}
 	}
 }
 

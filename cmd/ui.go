@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
@@ -167,6 +168,12 @@ func buildServices() ui.Services {
 			}
 			client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
 			return client.FetchPRDetail(repo, number)
+		},
+		OpenNvimFile: func(nucleusID, filePath string, line int) error {
+			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)
+		},
+		BrowserOpen: func(url string) error {
+			return exec.Command("xdg-open", url).Start()
 		},
 	}
 }

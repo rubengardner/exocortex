@@ -55,6 +55,7 @@ func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		issue := issues[m.jiraRowIdx]
+		m.jiraDetailURL = issue.URL
 		m.jiraDetailLoading = true
 		return m, m.loadJiraIssueCmd(issue.Key, issue.Summary)
 
@@ -115,6 +116,17 @@ func (m Model) updateJiraDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.jiraDetailScroll -= contentH
 		if m.jiraDetailScroll < 0 {
 			m.jiraDetailScroll = 0
+		}
+
+	case matchKey(msg, m.keys.OpenBrowser):
+		if m.jiraDetailURL == "" || m.services.BrowserOpen == nil {
+			return m, nil
+		}
+		svc := m.services.BrowserOpen
+		url := m.jiraDetailURL
+		return m, func() tea.Msg {
+			_ = svc(url)
+			return nil
 		}
 	}
 	return m, nil
@@ -301,7 +313,11 @@ func (m Model) viewJiraDetail() string {
 	divider := StyleDim.Render(strings.Repeat("─", m.width-2))
 	header := title + scrollInfo + "\n" + divider + "\n"
 
-	statusBar := StyleHelp.Render("  esc back   j/k scroll   pgdn/pgup page")
+	var browserHint string
+	if m.jiraDetailURL != "" && m.services.BrowserOpen != nil {
+		browserHint = "   o browser"
+	}
+	statusBar := StyleHelp.Render("  esc back   j/k scroll   pgdn/pgup page" + browserHint)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, visible, statusBar)
 }

@@ -80,3 +80,10 @@ type jiraIssueMetaLoadedMsg struct {
 	issue *jira.Issue
 	err   error
 }
+
+// githubPRMetaLoadedMsg is emitted when a PR's detail is fetched for display
+// in the Nucleus detail middle panel.
+type githubPRMetaLoadedMsg struct {
+	detail *github.PRDetail
+	err    error
+}

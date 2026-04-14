@@ -197,6 +197,29 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 		sb.WriteString("\n")
 	}
 
+	// ── GitHub PR section ─────────────────────────────────────────────────────
+	if n.PRNumber != 0 {
+		title := fmt.Sprintf("PR #%d", n.PRNumber)
+		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
+		sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+		switch {
+		case m.detailPRLoading:
+			sb.WriteString(StyleDim.Render("  loading…") + "\n")
+		case m.detailPRDetail != nil:
+			d := m.detailPRDetail
+			diff := fmt.Sprintf("+%d -%d • %d file(s)", d.Additions, d.Deletions, d.ChangedFiles)
+			sb.WriteString(StyleValue.Render("  "+truncate(diff, width-4)) + "\n")
+			sb.WriteString(StyleLabel.Render("Repo") + StyleValue.Render(truncate(n.PRRepo, width-10)) + "\n")
+			if d.Body != "" {
+				first := firstLine(d.Body)
+				sb.WriteString(StyleDim.Render("  "+truncate(first, width-4)) + "\n")
+			}
+		default:
+			sb.WriteString(StyleDim.Render(fmt.Sprintf("  #%d  %s", n.PRNumber, truncate(n.PRRepo, width-12))) + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
 	// ── Branch info section ───────────────────────────────────────────────────
 	sb.WriteString(StyleTitle.Render("BRANCH INFO") + "\n")
 	sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
@@ -278,6 +301,17 @@ func (m Model) viewDetailStatusBar() string {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
 	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   p preview   r refresh")
+}
+
+// firstLine returns the first non-empty line of s, useful for PR body previews.
+func firstLine(s string) string {
+	for _, l := range strings.SplitN(s, "\n", 10) {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			return l
+		}
+	}
+	return s
 }
 
 // ── Right panel in the main list view (unchanged) ─────────────────────────────
