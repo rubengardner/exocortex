@@ -1,0 +1,53 @@
+package ui
+
+import "github.com/ruben_gardner/exocortex/internal/jira"
+import "github.com/ruben_gardner/exocortex/internal/registry"
+
+// nucleiLoadedMsg is emitted when the async nucleus load completes.
+type nucleiLoadedMsg struct {
+	nuclei []registry.Nucleus
+	err    error
+}
+
+// reposLoadedMsg is emitted when the repo list load completes.
+type reposLoadedMsg struct {
+	repos []string
+	err   error
+}
+
+// profilesLoadedMsg is emitted when the profile list load completes.
+type profilesLoadedMsg struct {
+	names []string          // sorted display names
+	paths map[string]string // name → CLAUDE_CONFIG_DIR path
+	err   error
+}
+
+// actionDoneMsg is emitted after any nucleus-mutating side effect completes.
+type actionDoneMsg struct {
+	err       error
+	quitAfter bool // quit the TUI on success (used by GotoNucleus)
+}
+
+// tickMsg fires on the periodic preview timer.
+type tickMsg struct{}
+
+// paneCapturedMsg carries the latest capture-pane output.
+type paneCapturedMsg struct {
+	content string
+	err     error
+}
+
+// jiraBoardLoadedMsg is emitted when the Jira board fetch completes.
+type jiraBoardLoadedMsg struct {
+	columns []string
+	issues  map[string][]jira.Issue
+	err     error
+}
+
+// jiraIssueLoadedMsg is emitted when a single Jira issue description is fetched.
+type jiraIssueLoadedMsg struct {
+	key      string
+	title    string // "KEY — Summary"
+	markdown string
+	err      error
+}
