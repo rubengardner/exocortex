@@ -15,6 +15,7 @@ type JiraConfig struct {
 	Project  string   `json:"project"`
 	BoardID  int      `json:"board_id,omitempty"` // Agile board ID; when set, scopes results to that board
 	Statuses []string `json:"statuses,omitempty"`
+	TeamID   string   `json:"team_id,omitempty"` // Jira team UUID; when set, filters board to that team only
 }
 
 // ResolvedStatuses returns the configured statuses, or the default three if none are set.

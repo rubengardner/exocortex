@@ -41,7 +41,10 @@ func New(baseURL, email, apiToken string) *Client {
 // If boardID > 0 the Agile board endpoint is used
 // (GET /rest/agile/1.0/board/{id}/issue), which restricts results to that
 // specific board. Otherwise the project-wide search endpoint is used.
-func (c *Client) FetchBoard(boardID int, project string, statuses []string) (map[string][]Issue, error) {
+//
+// teamID, when non-empty, restricts results to issues belonging to that Jira
+// team (matched via customfield_10001).
+func (c *Client) FetchBoard(boardID int, project string, statuses []string, teamID string) (map[string][]Issue, error) {
 	quoted := make([]string, len(statuses))
 	for i, s := range statuses {
 		quoted[i] = fmt.Sprintf("%q", s)
@@ -54,11 +57,18 @@ func (c *Client) FetchBoard(boardID int, project string, statuses []string) (map
 		// grouped client-side by their actual status.name, then only the
 		// configured statuses are displayed as columns.
 		endpoint = fmt.Sprintf("%s/rest/agile/1.0/board/%d/issue", c.baseURL, boardID)
-		jql = "ORDER BY updated DESC"
+		if teamID != "" {
+			jql = fmt.Sprintf(`cf[10001]=%q ORDER BY updated DESC`, teamID)
+		} else {
+			jql = "ORDER BY updated DESC"
+		}
 	} else {
 		endpoint = c.baseURL + "/rest/api/3/search/jql"
-		jql = fmt.Sprintf(`project=%s AND status in (%s) ORDER BY updated DESC`,
-			project, strings.Join(quoted, ","))
+		jql = fmt.Sprintf(`project=%s AND status in (%s)`, project, strings.Join(quoted, ","))
+		if teamID != "" {
+			jql += fmt.Sprintf(` AND cf[10001]=%q`, teamID)
+		}
+		jql += " ORDER BY updated DESC"
 	}
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)

@@ -96,7 +96,7 @@ func buildServices() ui.Services {
 			}
 			statuses := cfg.Jira.ResolvedStatuses()
 			client := ijira.New(cfg.Jira.BaseURL, cfg.Jira.Email, cfg.Jira.APIToken)
-			issues, err := client.FetchBoard(cfg.Jira.BoardID, cfg.Jira.Project, statuses)
+			issues, err := client.FetchBoard(cfg.Jira.BoardID, cfg.Jira.Project, statuses, cfg.Jira.TeamID)
 			if err != nil {
 				return nil, nil, err
 			}

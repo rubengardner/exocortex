@@ -49,9 +49,9 @@ const (
 // Services holds the injectable side-effect functions the model calls.
 // Populated by cmd/ui.go with real infrastructure; replaced in tests with stubs.
 type Services struct {
-	LoadAgents    func() ([]registry.Agent, error)
-	LoadRepos     func() ([]string, error)               // nil disables the repo picker
-	LoadProfiles  func() (map[string]string, error)      // nil disables the profile picker
+	LoadAgents   func() ([]registry.Agent, error)
+	LoadRepos    func() ([]string, error)          // nil disables the repo picker
+	LoadProfiles func() (map[string]string, error) // nil disables the profile picker
 	// LoadJiraBoard fetches the kanban board. Returns ordered column names alongside the issues map.
 	LoadJiraBoard func() (columns []string, issues map[string][]jira.Issue, err error)
 	// LoadJiraIssue fetches a single issue's description as Markdown. nil disables the detail view.
@@ -137,9 +137,9 @@ type Model struct {
 	selectedRepo string // set when user picks a repo, or "." when no picker
 
 	// profile picker state
-	profileNames   []string          // sorted display names
-	profilePaths   map[string]string // name → CLAUDE_CONFIG_DIR path
-	profileCursor  int
+	profileNames    []string          // sorted display names
+	profilePaths    map[string]string // name → CLAUDE_CONFIG_DIR path
+	profileCursor   int
 	selectedProfile string // profile name chosen by user, or "" when no picker
 
 	// live pane preview
@@ -147,20 +147,20 @@ type Model struct {
 	paneContent    string // latest capture-pane output for the selected agent
 
 	// jira board
-	jiraColumns      []string // ordered status names (from config)
-	jiraIssues       map[string][]jira.Issue
-	jiraColIdx       int   // focused column (0–numCols-1)
-	jiraRowIdx       int   // focused row within column
-	jiraScrollOffs   []int // per-column scroll offset (top visible row index)
-	jiraLoading      bool
-	jiraErr          string
-	jiraLastRefresh  time.Time
+	jiraColumns     []string // ordered status names (from config)
+	jiraIssues      map[string][]jira.Issue
+	jiraColIdx      int   // focused column (0–numCols-1)
+	jiraRowIdx      int   // focused row within column
+	jiraScrollOffs  []int // per-column scroll offset (top visible row index)
+	jiraLoading     bool
+	jiraErr         string
+	jiraLastRefresh time.Time
 
 	// jira issue detail
-	jiraDetailKey     string   // issue key being shown ("" = closed)
-	jiraDetailTitle   string   // "KEY — Summary"
-	jiraDetailMD      string   // raw markdown (ADF-converted)
-	jiraDetailScroll  int      // top visible line index
+	jiraDetailKey     string // issue key being shown ("" = closed)
+	jiraDetailTitle   string // "KEY — Summary"
+	jiraDetailMD      string // raw markdown (ADF-converted)
+	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
 
 	// transient status bar message
@@ -700,7 +700,7 @@ func (m Model) viewNewForm() string {
 		profilePath := m.profilePaths[m.selectedProfile]
 		sb.WriteString(StyleLabel.Render("Profile") + StyleValue.Render(m.selectedProfile))
 		if profilePath != "" {
-			sb.WriteString(StyleDim.Render("  "+profilePath))
+			sb.WriteString(StyleDim.Render("  " + profilePath))
 		}
 		sb.WriteString("\n\n")
 	}
@@ -1168,7 +1168,7 @@ func (m Model) renderJiraColumn(colIdx int, status string, width, height int) st
 	if colIdx == m.jiraColIdx {
 		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
 	} else {
-		sb.WriteString(StyleLabel.Render(truncate(title, width-2)) + "\n")
+		sb.WriteString(StyleDim.Render(truncate(title, width-2)) + "\n")
 	}
 	sb.WriteString(StyleDim.Render(" "+strings.Repeat("─", clamp(width-4, 4, 60))) + "\n")
 

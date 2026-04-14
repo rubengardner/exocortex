@@ -51,7 +51,7 @@ func TestFetchBoard_ParsesResponse(t *testing.T) {
 
 	c := jira.New(srv.URL, "user@example.com", "token123")
 	statuses := []string{"In Progress", "Ready for CR", "Code Review"}
-	board, err := c.FetchBoard(0, "PROJ", statuses)
+	board, err := c.FetchBoard(0, "PROJ", statuses, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestFetchBoard_HTTPError(t *testing.T) {
 			defer srv.Close()
 
 			c := jira.New(srv.URL, "user@example.com", "bad-token")
-			_, err := c.FetchBoard(0, "PROJ", []string{"In Progress"})
+			_, err := c.FetchBoard(0, "PROJ", []string{"In Progress"}, "")
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -111,7 +111,7 @@ func TestFetchBoard_EmptyProject(t *testing.T) {
 	defer srv.Close()
 
 	c := jira.New(srv.URL, "user@example.com", "token")
-	board, err := c.FetchBoard(0, "PROJ", []string{"In Progress"})
+	board, err := c.FetchBoard(0, "PROJ", []string{"In Progress"}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestIssueURL(t *testing.T) {
 	defer srv.Close()
 
 	c := jira.New(srv.URL, "user@example.com", "token")
-	board, err := c.FetchBoard(0, "PROJ", []string{"In Progress", "Ready for CR", "Code Review"})
+	board, err := c.FetchBoard(0, "PROJ", []string{"In Progress", "Ready for CR", "Code Review"}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
