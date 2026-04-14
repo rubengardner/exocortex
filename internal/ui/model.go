@@ -26,8 +26,10 @@ type Services struct {
 	LoadJiraBoard func() (columns []string, issues map[string][]jira.Issue, err error)
 	// LoadJiraIssue fetches a single issue's description as Markdown; nil disables the detail view.
 	LoadJiraIssue func(key string) (markdown string, err error)
-	CapturePane   func(tmuxTarget string) (string, error) // nil disables live preview
-	CreateNucleus func(task, repo, branch, profile string) error
+	// LoadJiraIssueMeta fetches lightweight issue metadata for the Nucleus detail panel; nil disables it.
+	LoadJiraIssueMeta func(key string) (*jira.Issue, error)
+	CapturePane       func(tmuxTarget string) (string, error) // nil disables live preview
+	CreateNucleus     func(task, repo, branch, profile, jiraKey string) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
@@ -94,6 +96,14 @@ type Model struct {
 	jiraDetailMD      string // raw markdown (ADF-converted)
 	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
+
+	// Jira context for nucleus creation (set when N is pressed on the board).
+	pendingJiraKey     string // issue key, e.g. "PROJ-42"; "" = no Jira context
+	pendingJiraSummary string // issue summary for pre-filling the task field
+
+	// Jira metadata for the nucleus detail middle panel.
+	detailJiraIssue   *jira.Issue // nil until loaded (or if no JiraKey)
+	detailJiraLoading bool
 
 	// nucleus detail state
 	detailNeuronIdx int // selected neuron index within the detail view
@@ -214,8 +224,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.profileNames) == 0 {
 				// No profiles configured — skip picker.
 				m.selectedProfile = ""
-				m.state = stateNewOverlay
-				return m, textinput.Blink
+				return m.openNucleusForm()
 			}
 			m.state = stateProfileSelect
 		}
@@ -273,6 +282,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jiraDetailMD = msg.markdown
 			m.jiraDetailScroll = 0
 			m.state = stateJiraDetail
+		}
+		return m, nil
+
+	case jiraIssueMetaLoadedMsg:
+		m.detailJiraLoading = false
+		if msg.err == nil {
+			m.detailJiraIssue = msg.issue
 		}
 		return m, nil
 
@@ -506,6 +522,38 @@ func (m Model) loadGitHubPRDetailCmd(repo string, number int) tea.Cmd {
 		detail, err := svc(repo, number)
 		return githubPRDetailLoadedMsg{detail: detail, err: err}
 	}
+}
+
+// loadJiraIssueMetaCmd fires an async fetch of issue metadata for the nucleus
+// detail panel. It is a no-op when the current nucleus has no JiraKey or when
+// the LoadJiraIssueMeta service is not configured.
+func (m Model) loadJiraIssueMetaCmd() tea.Cmd {
+	if m.services.LoadJiraIssueMeta == nil || len(m.nuclei) == 0 {
+		return nil
+	}
+	key := m.nuclei[m.cursor].JiraKey
+	if key == "" {
+		return nil
+	}
+	svc := m.services.LoadJiraIssueMeta
+	return func() tea.Msg {
+		issue, err := svc(key)
+		return jiraIssueMetaLoadedMsg{issue: issue, err: err}
+	}
+}
+
+// openNucleusForm transitions to the new-nucleus form overlay. When a pending
+// Jira key is set, the task and branch fields are pre-filled from the linked
+// issue so the user can confirm or edit before submitting.
+func (m Model) openNucleusForm() (Model, tea.Cmd) {
+	if m.pendingJiraKey != "" {
+		m.formTask.SetValue(m.pendingJiraSummary)
+		m.formTask.CursorEnd()
+		m.formBranch.SetValue("task/" + m.pendingJiraKey + "/")
+		m.formBranch.CursorEnd()
+	}
+	m.state = stateNewOverlay
+	return m, textinput.Blink
 }
 
 // matchKey returns true if the tea.KeyMsg matches the given binding.

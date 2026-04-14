@@ -36,12 +36,13 @@ func runNew(cmd *cobra.Command, args []string) error {
 	reg := &registryAdapter{path: registry.DefaultPath()}
 	gt := igit.New(igit.ExecRunner{})
 	tm := itmux.New(itmux.ExecRunner{})
-	return executeNew(newTask, newRepo, newBranch, "", reg, gt, tm, cmd.OutOrStdout())
+	return executeNew(newTask, newRepo, newBranch, "", "", reg, gt, tm, cmd.OutOrStdout())
 }
 
 // executeNew creates a new nucleus with a single Claude neuron. claudeConfigDir,
 // when non-empty, is passed as CLAUDE_CONFIG_DIR when launching Claude Code.
-func executeNew(task, repoArg, branch, claudeConfigDir string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+// jiraKey, when non-empty, is stored on the Nucleus for Jira linkage.
+func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
 	repoPath, err := filepath.Abs(repoArg)
 	if err != nil {
 		return fmt.Errorf("resolve repo path: %w", err)
@@ -95,6 +96,7 @@ func executeNew(task, repoArg, branch, claudeConfigDir string, reg nucleusSvc, g
 		WorktreePath:    worktreePath,
 		Branch:          branch,
 		TaskDescription: task,
+		JiraKey:         jiraKey,
 		Neurons: []registry.Neuron{
 			{
 				ID:         "c1",
