@@ -29,21 +29,45 @@ func runBar(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// barOutput returns the tmux status fragment, or empty string when nothing is waiting.
+// barOutput returns the tmux status fragment showing active nuclei with their
+// neuron counts and a waiting indicator when relevant.
+// Returns empty string when there is nothing worth displaying.
 // Errors are swallowed — a broken bar is worse than a silent one.
 func barOutput(reg nucleusSvc) (string, error) {
 	r, err := reg.Load()
 	if err != nil {
 		return "", err
 	}
-	count := 0
+
+	var nucleiParts []string
+	waiting := 0
 	for _, n := range r.Nuclei {
 		if n.Status == "waiting" {
-			count++
+			waiting++
+		}
+		if len(n.Neurons) > 0 {
+			nucleiParts = append(nucleiParts, fmt.Sprintf("%s(%d)", n.ID, len(n.Neurons)))
 		}
 	}
-	if count == 0 {
-		return "", nil
+
+	var out string
+	if len(nucleiParts) > 0 {
+		out += "#[fg=cyan] " + joinStrings(nucleiParts, " ") + " #[default]"
 	}
-	return fmt.Sprintf("#[fg=yellow] %d waiting #[default]", count), nil
+	if waiting > 0 {
+		out += fmt.Sprintf("#[fg=yellow] %d waiting #[default]", waiting)
+	}
+	return out, nil
+}
+
+// joinStrings concatenates ss with sep between each element.
+func joinStrings(ss []string, sep string) string {
+	if len(ss) == 0 {
+		return ""
+	}
+	out := ss[0]
+	for _, s := range ss[1:] {
+		out += sep + s
+	}
+	return out
 }

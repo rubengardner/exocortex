@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
 // updateNucleusList handles key events when the main nucleus list is active.
@@ -127,14 +128,17 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.nuclei) == 0 {
 			return m, nil
 		}
+		n := m.nuclei[m.cursor]
 		m.detailNeuronIdx = 0
 		m.paneContent = ""
 		m.branchModified = nil
 		m.branchAheadCommits = nil
 		m.detailJiraIssue = nil
-		m.detailJiraLoading = m.nuclei[m.cursor].JiraKey != "" && m.services.LoadJiraIssueMeta != nil
+		m.detailJiraLoading = n.JiraKey != "" && m.services.LoadJiraIssueMeta != nil
+		m.detailPRDetail = nil
+		m.detailPRLoading = n.PRNumber != 0 && n.PRRepo != "" && m.services.LoadGitHubPR != nil
 		m.state = stateNucleusDetail
-		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd(), m.loadJiraIssueMetaCmd())
+		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd(), m.loadJiraIssueMetaCmd(), m.loadGitHubPRMetaCmd())
 	}
 	return m, nil
 }
@@ -159,16 +163,24 @@ func (m Model) viewNucleusList(width int) string {
 	var sb strings.Builder
 	for i, n := range m.nuclei {
 		dot := StatusDot(n.Status)
-		task := truncate(n.TaskDescription, width-14)
+		badges := nucleusBadges(n)
+		// Reserve space for badges (each badge is max 10 chars) + age (4) + separators.
+		badgesPlain := nucleusBadgesPlain(n) // plain text width for layout math
+		taskWidth := width - 10 - len(badgesPlain)
+		if taskWidth < 8 {
+			taskWidth = 8
+		}
+		task := truncate(n.TaskDescription, taskWidth)
 		age := fmtAge(n.CreatedAt)
 
 		line1 := fmt.Sprintf(" %s %-*s", dot, width-10, task)
-		line2 := StyleDim.Render(fmt.Sprintf("   %-*s %s", width-12, n.ID, age))
+		meta := fmt.Sprintf("   %s  %s", n.ID, age)
+		line2 := StyleDim.Render(meta) + badges
 
 		row := line1 + "\n" + line2
 		if i == m.cursor {
 			row = StyleSelected.Width(width).Render(line1) + "\n" +
-				StyleSelected.Width(width).Foreground(ColorDim).Render("  "+n.ID+" "+age)
+				StyleSelected.Width(width).Foreground(ColorDim).Render("  "+n.ID+"  "+age) + badges
 		}
 		sb.WriteString(row)
 		if i < len(m.nuclei)-1 {
@@ -176,6 +188,30 @@ func (m Model) viewNucleusList(width int) string {
 		}
 	}
 	return sb.String()
+}
+
+// nucleusBadges returns styled inline badges for Jira key and PR number.
+func nucleusBadges(n registry.Nucleus) string {
+	var s string
+	if n.JiraKey != "" {
+		s += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKey+"]")
+	}
+	if n.PRNumber != 0 {
+		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[#%d]", n.PRNumber))
+	}
+	return s
+}
+
+// nucleusBadgesPlain returns the plain-text width of badges (for layout math).
+func nucleusBadgesPlain(n registry.Nucleus) string {
+	var s string
+	if n.JiraKey != "" {
+		s += " [" + n.JiraKey + "]"
+	}
+	if n.PRNumber != 0 {
+		s += fmt.Sprintf(" [#%d]", n.PRNumber)
+	}
+	return s
 }
 
 // viewStatusBar renders the bottom status/help bar for the main view.
