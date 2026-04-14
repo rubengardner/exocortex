@@ -115,6 +115,14 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case matchKey(msg, m.keys.GitHub):
+		m.state = stateGitHubView
+		if m.githubPRs == nil && !m.githubLoading && m.services.LoadGitHubPRs != nil {
+			m.githubLoading = true
+			return m, m.loadGitHubPRsCmd()
+		}
+		return m, nil
+
 	case matchKey(msg, m.keys.Submit), msg.Type == tea.KeyRight:
 		if len(m.nuclei) == 0 {
 			return m, nil

@@ -17,6 +17,8 @@ const (
 	StateJiraDetail                     // single-issue description overlay
 	StateNucleusDetail                  // full-screen 3-panel nucleus dashboard
 	StateNeuronAdd                      // neuron type picker overlay (from detail)
+	StateGitHubView                     // GitHub PR list view
+	StateGitHubPRDetail                 // full-screen GitHub PR detail
 )
 
 // Internal aliases — allow the rest of the package to use lowercase names
@@ -30,6 +32,8 @@ const (
 	stateProfileSelect = StateProfileSelect
 	stateJiraBoard     = StateJiraBoard
 	stateJiraDetail    = StateJiraDetail
-	stateNucleusDetail = StateNucleusDetail
-	stateNeuronAdd     = StateNeuronAdd
+	stateNucleusDetail  = StateNucleusDetail
+	stateNeuronAdd      = StateNeuronAdd
+	stateGitHubView     = StateGitHubView
+	stateGitHubPRDetail = StateGitHubPRDetail
 )
