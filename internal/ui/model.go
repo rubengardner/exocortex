@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ruben_gardner/exocortex/internal/github"
 	"github.com/ruben_gardner/exocortex/internal/jira"
 	"github.com/ruben_gardner/exocortex/internal/registry"
 )
@@ -35,6 +36,10 @@ type Services struct {
 	RespawnNucleus func(id string) error // nil disables binding
 	AddNeuron     func(nucleusID, neuronType, profile string) error // nil disables neuron add
 	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
+	// LoadGitHubPRs fetches open PRs involving the current user; nil disables the GitHub view.
+	LoadGitHubPRs func() ([]github.PR, error)
+	// LoadGitHubPR fetches full detail for one PR; nil disables the detail view.
+	LoadGitHubPR func(repo string, number int) (*github.PRDetail, error)
 }
 
 // Model is the root Bubble Tea model.
@@ -100,6 +105,17 @@ type Model struct {
 	// neuron add state
 	neuronAddNucleusID string
 	neuronAddCursor    int
+
+	// github PR list state
+	githubPRs      []github.PR
+	githubPRCursor int
+	githubLoading  bool
+	githubErr      string
+
+	// github PR detail state
+	githubDetailPR     *github.PRDetail
+	githubDetailScroll int
+	githubDetailLoading bool
 
 	// transient status bar message
 	lastErr string
@@ -212,6 +228,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case githubPRsLoadedMsg:
+		m.githubLoading = false
+		if msg.err != nil {
+			m.githubErr = msg.err.Error()
+		} else {
+			m.githubPRs = msg.prs
+			m.githubErr = ""
+			if m.githubPRCursor >= len(m.githubPRs) {
+				m.githubPRCursor = 0
+			}
+		}
+		return m, nil
+
+	case githubPRDetailLoadedMsg:
+		m.githubDetailLoading = false
+		if msg.err != nil {
+			m.githubErr = msg.err.Error()
+			m.state = stateGitHubView
+		} else {
+			m.githubDetailPR = msg.detail
+			m.githubDetailScroll = 0
+			m.state = stateGitHubPRDetail
+		}
+		return m, nil
+
 	case tickMsg:
 		return m, tea.Batch(m.captureActivePaneCmd(), m.tickCmd())
 
@@ -288,6 +329,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateNucleusDetail(msg)
 		case stateNeuronAdd:
 			return m.updateNeuronAdd(msg)
+		case stateGitHubView:
+			return m.updateGitHubView(msg)
+		case stateGitHubPRDetail:
+			return m.updateGitHubPRDetail(msg)
 		case stateHelp:
 			// Any key dismisses help.
 			m.state = stateList
@@ -315,6 +360,10 @@ func (m Model) View() string {
 		return m.viewNucleusDetailDashboard()
 	case stateNeuronAdd:
 		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewNeuronAdd())
+	case stateGitHubView:
+		return m.viewGitHubView()
+	case stateGitHubPRDetail:
+		return m.viewGitHubPRDetail()
 	default:
 		base := m.viewMain()
 		switch m.state {
@@ -432,6 +481,30 @@ func (m Model) loadBranchInfoCmd() tea.Cmd {
 	return func() tea.Msg {
 		modified, ahead, err := svc(worktreePath)
 		return branchInfoLoadedMsg{modified: modified, aheadCommits: ahead, err: err}
+	}
+}
+
+// loadGitHubPRsCmd fires an async fetch of PRs from GitHub.
+func (m Model) loadGitHubPRsCmd() tea.Cmd {
+	if m.services.LoadGitHubPRs == nil {
+		return nil
+	}
+	svc := m.services.LoadGitHubPRs
+	return func() tea.Msg {
+		prs, err := svc()
+		return githubPRsLoadedMsg{prs: prs, err: err}
+	}
+}
+
+// loadGitHubPRDetailCmd fires an async fetch of a single PR's detail.
+func (m Model) loadGitHubPRDetailCmd(repo string, number int) tea.Cmd {
+	if m.services.LoadGitHubPR == nil {
+		return nil
+	}
+	svc := m.services.LoadGitHubPR
+	return func() tea.Msg {
+		detail, err := svc(repo, number)
+		return githubPRDetailLoadedMsg{detail: detail, err: err}
 	}
 }
 

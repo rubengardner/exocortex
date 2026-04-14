@@ -26,6 +26,12 @@ func (j *JiraConfig) ResolvedStatuses() []string {
 	return []string{"In Progress", "Ready for CR", "Code Review"}
 }
 
+// GitHubConfig holds credentials and settings for the GitHub PR view.
+type GitHubConfig struct {
+	Token string `json:"token"`            // Personal access token
+	Org   string `json:"org,omitempty"`    // Optional: filter PRs to this org
+}
+
 // Config holds user-level settings for exocortex.
 type Config struct {
 	// Repos is the list of absolute repository paths shown in the TUI repo picker.
@@ -40,6 +46,10 @@ type Config struct {
 	// Jira holds credentials and settings for the Jira board view.
 	// When nil, the board view shows a "not configured" message.
 	Jira *JiraConfig `json:"jira,omitempty"`
+
+	// GitHub holds credentials for the GitHub PR view.
+	// When nil, the GitHub view shows a "not configured" message.
+	GitHub *GitHubConfig `json:"github,omitempty"`
 }
 
 // DefaultPath returns the canonical config file location.

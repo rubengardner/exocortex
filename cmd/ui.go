@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
 	igit "github.com/ruben_gardner/exocortex/internal/git"
+	igithub "github.com/ruben_gardner/exocortex/internal/github"
 	ijira "github.com/ruben_gardner/exocortex/internal/jira"
 	"github.com/ruben_gardner/exocortex/internal/registry"
 	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
@@ -142,6 +143,22 @@ func buildServices() ui.Services {
 			}
 			client := ijira.New(cfg.Jira.BaseURL, cfg.Jira.Email, cfg.Jira.APIToken)
 			return client.FetchIssueDescription(key)
+		},
+		LoadGitHubPRs: func() ([]igithub.PR, error) {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil || cfg.GitHub == nil {
+				return nil, err
+			}
+			client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
+			return client.ListPRs()
+		},
+		LoadGitHubPR: func(repo string, number int) (*igithub.PRDetail, error) {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil || cfg.GitHub == nil {
+				return nil, err
+			}
+			client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
+			return client.FetchPRDetail(repo, number)
 		},
 	}
 }

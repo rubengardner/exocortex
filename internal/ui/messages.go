@@ -1,7 +1,10 @@
 package ui
 
-import "github.com/ruben_gardner/exocortex/internal/jira"
-import "github.com/ruben_gardner/exocortex/internal/registry"
+import (
+	"github.com/ruben_gardner/exocortex/internal/github"
+	"github.com/ruben_gardner/exocortex/internal/jira"
+	"github.com/ruben_gardner/exocortex/internal/registry"
+)
 
 // nucleiLoadedMsg is emitted when the async nucleus load completes.
 type nucleiLoadedMsg struct {
@@ -57,4 +60,16 @@ type branchInfoLoadedMsg struct {
 	modified     []string // relative paths of modified files
 	aheadCommits []string // one-line log entries ahead of upstream
 	err          error
+}
+
+// githubPRsLoadedMsg is emitted when the GitHub PR list fetch completes.
+type githubPRsLoadedMsg struct {
+	prs []github.PR
+	err error
+}
+
+// githubPRDetailLoadedMsg is emitted when a single PR detail fetch completes.
+type githubPRDetailLoadedMsg struct {
+	detail *github.PRDetail
+	err    error
 }

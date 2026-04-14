@@ -21,6 +21,7 @@ type KeyMap struct {
 	Respawn       key.Binding
 	TogglePreview key.Binding
 	Board         key.Binding
+	GitHub        key.Binding
 	AddNeuron     key.Binding
 }
 
@@ -95,6 +96,10 @@ func DefaultKeys() KeyMap {
 			key.WithKeys("b"),
 			key.WithHelp("b", "jira board"),
 		),
+		GitHub: key.NewBinding(
+			key.WithKeys("G"),
+			key.WithHelp("G", "github PRs"),
+		),
 		AddNeuron: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add neuron"),
@@ -112,6 +117,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Goto, k.Nvim, k.CloseNvim},
 		{k.New, k.Delete, k.Refresh, k.AddNeuron},
-		{k.Respawn, k.TogglePreview, k.Board, k.Help, k.Quit},
+		{k.Respawn, k.TogglePreview, k.Board, k.GitHub, k.Help, k.Quit},
 	}
 }
