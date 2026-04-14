@@ -5,14 +5,14 @@ import (
 	"io"
 
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
-	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/ruben_gardner/exocortex/internal/registry"
+	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
 var respawnCmd = &cobra.Command{
 	Use:   "respawn <id>",
-	Short: "Restart an agent's tmux window after tmux restart or accidental close",
+	Short: "Restart a nucleus's Claude window after tmux restart or accidental close",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRespawn,
 }
@@ -23,38 +23,43 @@ func runRespawn(cmd *cobra.Command, args []string) error {
 	return executeRespawn(args[0], reg, tm, cmd.OutOrStdout())
 }
 
-func executeRespawn(id string, reg registrySvc, tm tmuxSvc, out io.Writer) error {
+func executeRespawn(id string, reg nucleusSvc, tm tmuxSvc, out io.Writer) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
 	}
-	agent, err := r.FindByID(id)
+	nucleus, err := r.FindByID(id)
 	if err != nil {
 		return err
 	}
 
+	primary := nucleus.PrimaryNeuron()
+	if primary == nil {
+		return fmt.Errorf("nucleus %q has no neurons to respawn", id)
+	}
+
 	// If the window is still alive, nothing to do.
-	exists, err := tm.WindowExists(agent.TmuxTarget)
+	exists, err := tm.WindowExists(primary.TmuxTarget)
 	if err != nil {
 		return fmt.Errorf("check window: %w", err)
 	}
 	if exists {
-		fmt.Fprintf(out, "agent %s is already running at %s\n", id, agent.TmuxTarget)
+		fmt.Fprintf(out, "nucleus %s is already running at %s\n", id, primary.TmuxTarget)
 		return nil
 	}
 
 	// Open a new window in the worktree and restart Claude Code.
-	target, err := tm.NewWindow(agent.WorktreePath, agent.TaskDescription)
+	target, err := tm.NewWindow(nucleus.WorktreePath, nucleus.TaskDescription)
 	if err != nil {
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
 
-	// Resolve the profile stored on the agent to a CLAUDE_CONFIG_DIR path.
+	// Resolve the profile stored on the primary neuron to a CLAUDE_CONFIG_DIR path.
 	claudeCmd := "claude"
-	if agent.Profile != "" {
+	if primary.Profile != "" {
 		cfg, cfgErr := iconfig.Load(iconfig.DefaultPath())
 		if cfgErr == nil {
-			if path, ok := cfg.Profiles[agent.Profile]; ok && path != "" {
+			if path, ok := cfg.Profiles[primary.Profile]; ok && path != "" {
 				claudeCmd = "CLAUDE_CONFIG_DIR=" + path + " claude"
 			}
 		}
@@ -63,18 +68,18 @@ func executeRespawn(id string, reg registrySvc, tm tmuxSvc, out io.Writer) error
 		return fmt.Errorf("send keys: %w", err)
 	}
 
-	// Persist the new target.
-	if err := reg.UpdateTmuxTarget(id, target); err != nil {
-		return fmt.Errorf("update tmux target: %w", err)
+	// Persist the new target on the primary neuron.
+	if err := reg.UpdateNeuronTarget(id, primary.ID, target); err != nil {
+		return fmt.Errorf("update neuron target: %w", err)
 	}
 
-	// Clear stale nvim target — that window is also gone.
-	if agent.NvimTarget != "" {
-		if err := reg.UpdateNvimTarget(id, ""); err != nil {
-			fmt.Fprintf(out, "warning: could not clear nvim target: %v\n", err)
+	// Remove stale nvim neuron — that window is also gone.
+	if nvim := nucleus.NvimNeuron(); nvim != nil {
+		if err := reg.RemoveNeuron(id, nvim.ID); err != nil {
+			fmt.Fprintf(out, "warning: could not remove nvim neuron: %v\n", err)
 		}
 	}
 
-	fmt.Fprintf(out, "respawned agent %s at %s\n", id, target)
+	fmt.Fprintf(out, "respawned nucleus %s at %s\n", id, target)
 	return nil
 }

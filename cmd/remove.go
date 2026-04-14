@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	igit "github.com/ruben_gardner/exocortex/internal/git"
-	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/ruben_gardner/exocortex/internal/registry"
+	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
 var removeCmd = &cobra.Command{
 	Use:   "remove <id>",
-	Short: "Remove an agent, its tmux pane, and its git worktree",
+	Short: "Remove a nucleus, its tmux panes, and its git worktree",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRemove,
 }
@@ -23,31 +23,29 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	return executeRemove(args[0], reg, gt, tm)
 }
 
-func executeRemove(id string, reg registrySvc, gt gitSvc, tm tmuxSvc) error {
+func executeRemove(id string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
 	}
-	agent, err := r.FindByID(id)
+	nucleus, err := r.FindByID(id)
 	if err != nil {
 		return err
 	}
 
-	// Kill tmux pane — warn on failure but continue cleanup.
-	if err := tm.KillPane(agent.TmuxTarget); err != nil {
-		fmt.Printf("warning: could not kill tmux pane %s: %v\n", agent.TmuxTarget, err)
-	}
-
-	// Kill nvim window if one was recorded — best-effort.
-	if agent.NvimTarget != "" {
-		if err := tm.KillPane(agent.NvimTarget); err != nil {
-			fmt.Printf("warning: could not kill nvim window %s: %v\n", agent.NvimTarget, err)
+	// Kill all neuron panes — warn on failure but continue cleanup.
+	for _, neuron := range nucleus.Neurons {
+		if neuron.TmuxTarget == "" {
+			continue
+		}
+		if err := tm.KillPane(neuron.TmuxTarget); err != nil {
+			fmt.Printf("warning: could not kill tmux pane %s (%s): %v\n", neuron.TmuxTarget, neuron.ID, err)
 		}
 	}
 
 	// Remove the git worktree — warn on failure but continue cleanup.
-	if err := gt.RemoveWorktree(agent.RepoPath, agent.WorktreePath); err != nil {
-		fmt.Printf("warning: could not remove worktree %s: %v\n", agent.WorktreePath, err)
+	if err := gt.RemoveWorktree(nucleus.RepoPath, nucleus.WorktreePath); err != nil {
+		fmt.Printf("warning: could not remove worktree %s: %v\n", nucleus.WorktreePath, err)
 	}
 
 	return reg.Delete(id)

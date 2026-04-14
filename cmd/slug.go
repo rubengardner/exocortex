@@ -11,7 +11,7 @@ import (
 var nonAlpha = regexp.MustCompile(`[^a-z0-9]`)
 
 // slugify converts a task description to a short, typeable ID.
-// e.g. "Fix auth bug" → "fixau"
+// e.g. "Fix auth bug" → "fixaut"
 func slugify(task string) string {
 	s := strings.ToLower(task)
 	s = nonAlpha.ReplaceAllString(s, "")
@@ -21,13 +21,13 @@ func slugify(task string) string {
 	return s
 }
 
-// uniqueID returns a slug-based ID that does not collide with existing agent IDs.
+// uniqueID returns a slug-based ID that does not collide with existing nucleus IDs.
 // Appends a numeric suffix if needed.
-func uniqueID(task string, agents []registry.Agent) string {
+func uniqueID(task string, nuclei []registry.Nucleus) string {
 	base := slugify(task)
-	existing := make(map[string]struct{}, len(agents))
-	for _, a := range agents {
-		existing[a.ID] = struct{}{}
+	existing := make(map[string]struct{}, len(nuclei))
+	for _, n := range nuclei {
+		existing[n.ID] = struct{}{}
 	}
 	if _, ok := existing[base]; !ok {
 		return base

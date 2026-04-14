@@ -13,30 +13,39 @@ type fakeGitNvim struct {
 func (g *fakeGitNvim) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
 	return nil
 }
-func (g *fakeGitNvim) RemoveWorktree(repoPath, worktreePath string) error { return nil }
-func (g *fakeGitNvim) ModifiedFiles(worktreePath string) ([]string, error) {
-	return g.files, nil
-}
-func (g *fakeGitNvim) BranchExists(repoPath, branch string) (bool, error)        { return false, nil }
+func (g *fakeGitNvim) RemoveWorktree(repoPath, worktreePath string) error    { return nil }
+func (g *fakeGitNvim) ModifiedFiles(worktreePath string) ([]string, error)   { return g.files, nil }
+func (g *fakeGitNvim) BranchExists(repoPath, branch string) (bool, error)    { return false, nil }
 
 type fakeRegistryNvim struct {
-	agents         []registry.Agent
-	nvimTargetID   string
-	nvimTargetVal  string
+	nuclei              []registry.Nucleus
+	addedNeuronID       string
+	addedNeuronTarget   string
+	updatedNeuronID     string
+	updatedNeuronTarget string
+	removedNeuronID     string
 }
 
 func (f *fakeRegistryNvim) Load() (*registry.Registry, error) {
-	return &registry.Registry{Agents: f.agents}, nil
+	return &registry.Registry{Nuclei: f.nuclei}, nil
 }
-func (f *fakeRegistryNvim) Add(a registry.Agent) error { return nil }
-func (f *fakeRegistryNvim) Delete(id string) error     { return nil }
+func (f *fakeRegistryNvim) Add(n registry.Nucleus) error { return nil }
+func (f *fakeRegistryNvim) Delete(id string) error       { return nil }
 func (f *fakeRegistryNvim) UpdateStatus(id, status string) error { return nil }
-func (f *fakeRegistryNvim) UpdateNvimTarget(id, target string) error {
-	f.nvimTargetID = id
-	f.nvimTargetVal = target
+func (f *fakeRegistryNvim) AddNeuron(nucleusID string, neuron registry.Neuron) error {
+	f.addedNeuronID = neuron.ID
+	f.addedNeuronTarget = neuron.TmuxTarget
 	return nil
 }
-func (f *fakeRegistryNvim) UpdateTmuxTarget(id, target string) error { return nil }
+func (f *fakeRegistryNvim) RemoveNeuron(nucleusID, neuronID string) error {
+	f.removedNeuronID = neuronID
+	return nil
+}
+func (f *fakeRegistryNvim) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
+	f.updatedNeuronID = neuronID
+	f.updatedNeuronTarget = target
+	return nil
+}
 
 type fakeTmuxNvim struct {
 	newWindowName  string
@@ -72,8 +81,11 @@ func (t *fakeTmuxNvim) CurrentTarget() (string, error)            { return "", n
 func (t *fakeTmuxNvim) CapturePane(target string) (string, error) { return "", nil }
 
 func TestRunNvim_UsesModifiedFile(t *testing.T) {
-	reg := &fakeRegistryNvim{agents: []registry.Agent{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
+		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+			}},
 	}}
 	gt := &fakeGitNvim{files: []string{"main.go", "other.go"}}
 	tm := &fakeTmuxNvim{}
@@ -91,10 +103,13 @@ func TestRunNvim_UsesModifiedFile(t *testing.T) {
 }
 
 func TestRunNvim_FallsBackToWorktreeRoot(t *testing.T) {
-	reg := &fakeRegistryNvim{agents: []registry.Agent{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123"},
+	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
+		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+			}},
 	}}
-	gt := &fakeGitNvim{files: []string{}} // no modified files
+	gt := &fakeGitNvim{files: []string{}}
 	tm := &fakeTmuxNvim{}
 
 	err := executeNvim("abc123", reg, gt, tm)
@@ -107,8 +122,12 @@ func TestRunNvim_FallsBackToWorktreeRoot(t *testing.T) {
 }
 
 func TestRunNvim_ExistingWindow_SelectsInsteadOfCreating(t *testing.T) {
-	reg := &fakeRegistryNvim{agents: []registry.Agent{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123", NvimTarget: "main:3.0"},
+	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
+		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:3.0"},
+			}},
 	}}
 	gt := &fakeGitNvim{files: []string{"main.go"}}
 	tm := &fakeTmuxNvim{windowExists: true}
@@ -128,9 +147,12 @@ func TestRunNvim_ExistingWindow_SelectsInsteadOfCreating(t *testing.T) {
 	}
 }
 
-func TestRunNvim_SavesNvimTarget(t *testing.T) {
-	reg := &fakeRegistryNvim{agents: []registry.Agent{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123"},
+func TestRunNvim_AddsNvimNeuron_FirstTime(t *testing.T) {
+	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
+		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+			}},
 	}}
 	gt := &fakeGitNvim{files: []string{"main.go"}}
 	tm := &fakeTmuxNvim{}
@@ -139,11 +161,35 @@ func TestRunNvim_SavesNvimTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if reg.nvimTargetID != "abc123" {
-		t.Fatalf("expected UpdateNvimTarget called for abc123, got %q", reg.nvimTargetID)
+	if reg.addedNeuronID != "nvim" {
+		t.Fatalf("expected AddNeuron called with id 'nvim', got %q", reg.addedNeuronID)
 	}
-	if reg.nvimTargetVal != "main:2.0" {
-		t.Fatalf("expected nvim target main:2.0, got %q", reg.nvimTargetVal)
+	if reg.addedNeuronTarget != "main:2.0" {
+		t.Fatalf("expected nvim target main:2.0, got %q", reg.addedNeuronTarget)
+	}
+}
+
+func TestRunNvim_UpdatesNvimNeuron_DeadWindow(t *testing.T) {
+	// Nucleus already has an nvim neuron but the window is gone — update target.
+	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
+		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+			Neurons: []registry.Neuron{
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:3.0"},
+			}},
+	}}
+	gt := &fakeGitNvim{files: []string{"main.go"}}
+	tm := &fakeTmuxNvim{windowExists: false}
+
+	err := executeNvim("abc123", reg, gt, tm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reg.updatedNeuronID != "nvim" {
+		t.Fatalf("expected UpdateNeuronTarget called with neuronID 'nvim', got %q", reg.updatedNeuronID)
+	}
+	if reg.updatedNeuronTarget != "main:2.0" {
+		t.Fatalf("expected updated target main:2.0, got %q", reg.updatedNeuronTarget)
 	}
 }
 

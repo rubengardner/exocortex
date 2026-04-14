@@ -8,8 +8,8 @@ import (
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
 	igit "github.com/ruben_gardner/exocortex/internal/git"
 	ijira "github.com/ruben_gardner/exocortex/internal/jira"
-	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/ruben_gardner/exocortex/internal/registry"
+	itmux "github.com/ruben_gardner/exocortex/internal/tmux"
 	"github.com/ruben_gardner/exocortex/internal/ui"
 )
 
@@ -49,19 +49,16 @@ func buildServices() ui.Services {
 			if len(cfg.Profiles) == 0 {
 				return nil, nil
 			}
-			// Return a sorted slice of names alongside the map — caller uses both.
-			// We return the raw map; the TUI sorts names for display.
 			return cfg.Profiles, nil
 		},
-		LoadAgents: func() ([]registry.Agent, error) {
+		LoadNuclei: func() ([]registry.Nucleus, error) {
 			r, err := reg.Load()
 			if err != nil {
 				return nil, err
 			}
-			return r.Agents, nil
+			return r.Nuclei, nil
 		},
-		CreateAgent: func(task, repo, branch, profileName string) error {
-			// Resolve profile name → CLAUDE_CONFIG_DIR path.
+		CreateNucleus: func(task, repo, branch, profileName string) error {
 			claudeConfigDir := ""
 			if profileName != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -71,13 +68,13 @@ func buildServices() ui.Services {
 			}
 			return executeNew(task, repo, branch, claudeConfigDir, reg, gt, tm, io.Discard)
 		},
-		RemoveAgent: func(id string) error {
+		RemoveNucleus: func(id string) error {
 			return executeRemove(id, reg, gt, tm)
 		},
 		CapturePane: func(target string) (string, error) {
 			return tm.CapturePane(target)
 		},
-		GotoAgent: func(id string) error {
+		GotoNucleus: func(id string) error {
 			return executeGoto(id, reg, tm)
 		},
 		OpenNvim: func(id string) error {
@@ -86,7 +83,7 @@ func buildServices() ui.Services {
 		CloseNvim: func(id string) error {
 			return executeCloseNvim(id, reg, tm)
 		},
-		RespawnAgent: func(id string) error {
+		RespawnNucleus: func(id string) error {
 			return executeRespawn(id, reg, tm, io.Discard)
 		},
 		LoadJiraBoard: func() ([]string, map[string][]ijira.Issue, error) {
