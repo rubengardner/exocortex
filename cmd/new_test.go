@@ -78,6 +78,7 @@ func (g *fakeGit) AddWorktree(repoPath, worktreePath, branch string, createBranc
 func (g *fakeGit) RemoveWorktree(repoPath, worktreePath string) error        { return nil }
 func (g *fakeGit) ModifiedFiles(worktreePath string) ([]string, error)       { return nil, nil }
 func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error)        { return g.branchExists, nil }
+func (g *fakeGit) AheadCommits(worktreePath string) ([]string, error)        { return nil, nil }
 
 // ── shared fake tmux ──────────────────────────────────────────────────────────
 

@@ -15,6 +15,8 @@ const (
 	StateProfileSelect                  // profile picker (after repo, before form)
 	StateJiraBoard                      // live Jira kanban view
 	StateJiraDetail                     // single-issue description overlay
+	StateNucleusDetail                  // full-screen 3-panel nucleus dashboard
+	StateNeuronAdd                      // neuron type picker overlay (from detail)
 )
 
 // Internal aliases — allow the rest of the package to use lowercase names
@@ -28,4 +30,6 @@ const (
 	stateProfileSelect = StateProfileSelect
 	stateJiraBoard     = StateJiraBoard
 	stateJiraDetail    = StateJiraDetail
+	stateNucleusDetail = StateNucleusDetail
+	stateNeuronAdd     = StateNeuronAdd
 )

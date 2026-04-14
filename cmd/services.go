@@ -10,6 +10,7 @@ type gitSvc interface {
 	RemoveWorktree(repoPath, worktreePath string) error
 	ModifiedFiles(worktreePath string) ([]string, error)
 	BranchExists(repoPath, branch string) (bool, error)
+	AheadCommits(worktreePath string) ([]string, error)
 }
 
 type tmuxSvc interface {

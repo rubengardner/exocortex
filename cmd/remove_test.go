@@ -42,6 +42,7 @@ func (g *fakeGitRemove) RemoveWorktree(repoPath, worktreePath string) error {
 }
 func (g *fakeGitRemove) ModifiedFiles(worktreePath string) ([]string, error) { return nil, nil }
 func (g *fakeGitRemove) BranchExists(repoPath, branch string) (bool, error)  { return false, nil }
+func (g *fakeGitRemove) AheadCommits(worktreePath string) ([]string, error) { return nil, nil }
 
 type fakeTmuxRemove struct {
 	killCalled    bool

@@ -189,6 +189,57 @@ func TestHasUncommittedChanges_Dirty(t *testing.T) {
 	}
 }
 
+func TestAheadCommits_Args(t *testing.T) {
+	r := &captureRunner{output: ""}
+	g := git.New(r)
+
+	_, _ = g.AheadCommits("/repo/.worktrees/abc123")
+	want := []string{"-C", "/repo/.worktrees/abc123", "log", "--oneline", "@{u}..HEAD"}
+	if !equalSlice(r.args, want) {
+		t.Fatalf("args mismatch\n got:  %v\n want: %v", r.args, want)
+	}
+}
+
+func TestAheadCommits_ParsesLines(t *testing.T) {
+	r := &captureRunner{output: "abc1234 fix auth\ndef5678 add tests\n"}
+	g := git.New(r)
+
+	commits, err := g.AheadCommits("/repo/.worktrees/abc123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(commits) != 2 || commits[0] != "abc1234 fix auth" || commits[1] != "def5678 add tests" {
+		t.Fatalf("unexpected commits: %v", commits)
+	}
+}
+
+func TestAheadCommits_Empty(t *testing.T) {
+	r := &captureRunner{output: ""}
+	g := git.New(r)
+
+	commits, err := g.AheadCommits("/repo/.worktrees/abc123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("expected empty, got %v", commits)
+	}
+}
+
+func TestAheadCommits_ErrorReturnsSilently(t *testing.T) {
+	// When no upstream is configured, git errors — we return empty slice, not error.
+	r := &captureRunner{err: errors.New("no upstream")}
+	g := git.New(r)
+
+	commits, err := g.AheadCommits("/repo/.worktrees/abc123")
+	if err != nil {
+		t.Fatalf("expected nil error for missing upstream, got: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("expected empty slice, got %v", commits)
+	}
+}
+
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
