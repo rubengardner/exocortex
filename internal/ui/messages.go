@@ -51,3 +51,10 @@ type jiraIssueLoadedMsg struct {
 	markdown string
 	err      error
 }
+
+// branchInfoLoadedMsg is emitted when git status/log data is fetched for a nucleus.
+type branchInfoLoadedMsg struct {
+	modified     []string // relative paths of modified files
+	aheadCommits []string // one-line log entries ahead of upstream
+	err          error
+}

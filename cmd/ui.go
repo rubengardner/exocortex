@@ -77,6 +77,42 @@ func buildServices() ui.Services {
 		GotoNucleus: func(id string) error {
 			return executeGoto(id, reg, tm)
 		},
+		GotoNeuron: func(nucleusID, neuronID string) error {
+			r, err := reg.Load()
+			if err != nil {
+				return err
+			}
+			n, err := r.FindByID(nucleusID)
+			if err != nil {
+				return err
+			}
+			neu, err := n.FindNeuronByID(neuronID)
+			if err != nil {
+				return err
+			}
+			return tm.SelectPane(neu.TmuxTarget)
+		},
+		AddNeuron: func(nucleusID, neuronType, profileName string) error {
+			claudeConfigDir := ""
+			if profileName != "" {
+				cfg, err := iconfig.Load(iconfig.DefaultPath())
+				if err == nil {
+					claudeConfigDir = cfg.Profiles[profileName]
+				}
+			}
+			return executeAddNeuron(nucleusID, neuronType, claudeConfigDir, reg, tm)
+		},
+		LoadBranchInfo: func(worktreePath string) ([]string, []string, error) {
+			modified, err := gt.ModifiedFiles(worktreePath)
+			if err != nil {
+				return nil, nil, err
+			}
+			ahead, err := gt.AheadCommits(worktreePath)
+			if err != nil {
+				return nil, nil, err
+			}
+			return modified, ahead, nil
+		},
 		OpenNvim: func(id string) error {
 			return executeNvim(id, reg, gt, tm)
 		},

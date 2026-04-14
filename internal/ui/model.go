@@ -29,9 +29,12 @@ type Services struct {
 	CreateNucleus func(task, repo, branch, profile string) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
+	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
 	OpenNvim      func(id string) error
 	CloseNvim     func(id string) error  // nil disables binding
 	RespawnNucleus func(id string) error // nil disables binding
+	AddNeuron     func(nucleusID, neuronType, profile string) error // nil disables neuron add
+	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
 }
 
 // Model is the root Bubble Tea model.
@@ -87,6 +90,17 @@ type Model struct {
 	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
 
+	// nucleus detail state
+	detailNeuronIdx int // selected neuron index within the detail view
+
+	// branch info (loaded async when detail view opens)
+	branchModified     []string
+	branchAheadCommits []string
+
+	// neuron add state
+	neuronAddNucleusID string
+	neuronAddCursor    int
+
 	// transient status bar message
 	lastErr string
 }
@@ -123,6 +137,9 @@ func (m Model) Cursor() int { return m.cursor }
 
 // State returns the current view state.
 func (m Model) State() ViewState { return m.state }
+
+// DetailNeuronIdx returns the selected neuron index in StateNucleusDetail.
+func (m Model) DetailNeuronIdx() int { return m.detailNeuronIdx }
 
 // Init issues the first data load. The preview tick starts automatically
 // after the first successful nucleus load so it doesn't interfere with tests.
@@ -188,8 +205,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case branchInfoLoadedMsg:
+		if msg.err == nil {
+			m.branchModified = msg.modified
+			m.branchAheadCommits = msg.aheadCommits
+		}
+		return m, nil
+
 	case tickMsg:
-		return m, tea.Batch(m.capturePaneCmd(), m.tickCmd())
+		return m, tea.Batch(m.captureActivePaneCmd(), m.tickCmd())
 
 	case paneCapturedMsg:
 		if msg.err == nil {
@@ -260,6 +284,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateJiraBoard(msg)
 		case stateJiraDetail:
 			return m.updateJiraDetail(msg)
+		case stateNucleusDetail:
+			return m.updateNucleusDetail(msg)
+		case stateNeuronAdd:
+			return m.updateNeuronAdd(msg)
 		case stateHelp:
 			// Any key dismisses help.
 			m.state = stateList
@@ -283,6 +311,10 @@ func (m Model) View() string {
 		return m.viewJiraBoard()
 	case stateJiraDetail:
 		return m.viewJiraDetail()
+	case stateNucleusDetail:
+		return m.viewNucleusDetailDashboard()
+	case stateNeuronAdd:
+		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewNeuronAdd())
 	default:
 		base := m.viewMain()
 		switch m.state {
@@ -358,6 +390,48 @@ func (m Model) loadNucleiCmd() tea.Cmd {
 	return func() tea.Msg {
 		nuclei, err := svc()
 		return nucleiLoadedMsg{nuclei: nuclei, err: err}
+	}
+}
+
+// captureActivePaneCmd captures the relevant pane based on current state:
+// in StateNucleusDetail it captures the selected neuron; otherwise the primary neuron.
+func (m Model) captureActivePaneCmd() tea.Cmd {
+	if m.state == stateNucleusDetail {
+		return m.captureDetailPaneCmd()
+	}
+	return m.capturePaneCmd()
+}
+
+// captureDetailPaneCmd captures the tmux pane for the selected neuron in the detail view.
+func (m Model) captureDetailPaneCmd() tea.Cmd {
+	if m.services.CapturePane == nil || len(m.nuclei) == 0 || !m.previewEnabled {
+		return nil
+	}
+	n := m.nuclei[m.cursor]
+	if len(n.Neurons) == 0 || m.detailNeuronIdx >= len(n.Neurons) {
+		return nil
+	}
+	target := n.Neurons[m.detailNeuronIdx].TmuxTarget
+	if target == "" {
+		return nil
+	}
+	svc := m.services.CapturePane
+	return func() tea.Msg {
+		content, err := svc(target)
+		return paneCapturedMsg{content: content, err: err}
+	}
+}
+
+// loadBranchInfoCmd fires an async git status/log fetch for the current nucleus.
+func (m Model) loadBranchInfoCmd() tea.Cmd {
+	if m.services.LoadBranchInfo == nil || len(m.nuclei) == 0 {
+		return nil
+	}
+	worktreePath := m.nuclei[m.cursor].WorktreePath
+	svc := m.services.LoadBranchInfo
+	return func() tea.Msg {
+		modified, ahead, err := svc(worktreePath)
+		return branchInfoLoadedMsg{modified: modified, aheadCommits: ahead, err: err}
 	}
 }
 

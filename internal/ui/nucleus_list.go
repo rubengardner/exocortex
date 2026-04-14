@@ -114,6 +114,17 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadJiraBoardCmd()
 		}
 		return m, nil
+
+	case matchKey(msg, m.keys.Submit), msg.Type == tea.KeyRight:
+		if len(m.nuclei) == 0 {
+			return m, nil
+		}
+		m.detailNeuronIdx = 0
+		m.paneContent = ""
+		m.branchModified = nil
+		m.branchAheadCommits = nil
+		m.state = stateNucleusDetail
+		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd())
 	}
 	return m, nil
 }

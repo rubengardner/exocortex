@@ -76,7 +76,21 @@ func (g *Git) HasUncommittedChanges(worktreePath string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
-// ModifiedFiles returns the list of modified (unstaged) files in the worktree.
+// AheadCommits returns the one-line log entries for commits ahead of the
+// upstream tracking branch. If no upstream is configured (or the command
+// fails for any other reason), an empty slice is returned — not an error.
+func (g *Git) AheadCommits(worktreePath string) ([]string, error) {
+	out, err := g.runner.Run("git", "-C", worktreePath, "log", "--oneline", "@{u}..HEAD")
+	if err != nil {
+		// No upstream configured, or detached HEAD — treat as 0 ahead.
+		return []string{}, nil
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return []string{}, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
 // Returns an empty slice if there are none.
 func (g *Git) ModifiedFiles(worktreePath string) ([]string, error) {
 	out, err := g.runner.Run("git", "-C", worktreePath, "ls-files", "-m")
