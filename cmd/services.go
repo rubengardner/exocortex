@@ -12,6 +12,7 @@ type gitSvc interface {
 	BranchExists(repoPath, branch string) (bool, error)
 	AheadCommits(worktreePath string) ([]string, error)
 	ListBranches(repoPath string) ([]string, error)
+	Checkout(repoPath, branch string) error
 }
 
 type tmuxSvc interface {

@@ -64,10 +64,12 @@ func (f *fakeRegistry) UpdateNeuronTarget(nucleusID, neuronID, target string) er
 // ── shared fake git ────────────────────────────────────────────────────────────
 
 type fakeGit struct {
-	addErr       error
-	addCalled    bool
-	createBranch bool
-	branchExists bool
+	addErr         error
+	addCalled      bool
+	createBranch   bool
+	branchExists   bool
+	checkoutBranch string
+	checkoutErr    error
 }
 
 func (g *fakeGit) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
@@ -80,6 +82,7 @@ func (g *fakeGit) ModifiedFiles(worktreePath string) ([]string, error)       { r
 func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error)        { return g.branchExists, nil }
 func (g *fakeGit) AheadCommits(worktreePath string) ([]string, error)        { return nil, nil }
 func (g *fakeGit) ListBranches(repoPath string) ([]string, error)            { return nil, nil }
+func (g *fakeGit) Checkout(repoPath, branch string) error                    { g.checkoutBranch = branch; return g.checkoutErr }
 
 // ── shared fake tmux ──────────────────────────────────────────────────────────
 
@@ -358,5 +361,47 @@ func TestExecuteReview_GitError_Propagates(t *testing.T) {
 	err := executeReview("Review PR #1", ".", "feat/foo", "", 1, "org/repo", true, reg, gt, tm, &strings.Builder{})
 	if err == nil {
 		t.Fatal("expected error from git")
+	}
+}
+
+func TestExecuteReview_NoWorktree_ChecksOutBranch(t *testing.T) {
+	// When createWorktree=false the repo itself must be switched to the PR branch.
+	reg := &fakeRegistry{}
+	gt := &fakeGit{}
+	tm := &fakeTmux{target: "main:1.0"}
+
+	err := executeReview("Review: Fix login", ".", "feat/oauth", "", 5, "org/repo", false, reg, gt, tm, &strings.Builder{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gt.checkoutBranch != "feat/oauth" {
+		t.Fatalf("expected Checkout called with 'feat/oauth', got %q", gt.checkoutBranch)
+	}
+	if gt.addCalled {
+		t.Fatal("AddWorktree must not be called when createWorktree=false")
+	}
+}
+
+func TestExecuteReview_NoWorktree_CheckoutError_Propagates(t *testing.T) {
+	reg := &fakeRegistry{}
+	gt := &fakeGit{checkoutErr: errors.New("dirty working tree")}
+	tm := &fakeTmux{}
+
+	err := executeReview("Review: Fix login", ".", "feat/oauth", "", 5, "org/repo", false, reg, gt, tm, &strings.Builder{})
+	if err == nil {
+		t.Fatal("expected error when checkout fails")
+	}
+}
+
+func TestExecuteReview_WithWorktree_DoesNotCallCheckout(t *testing.T) {
+	// When createWorktree=true the worktree path handles branch isolation;
+	// Checkout must not be called.
+	reg := &fakeRegistry{}
+	gt := &fakeGit{}
+	tm := &fakeTmux{target: "main:1.0"}
+
+	_ = executeReview("Review: Fix login", ".", "feat/oauth", "", 5, "org/repo", true, reg, gt, tm, &strings.Builder{})
+	if gt.checkoutBranch != "" {
+		t.Fatalf("expected Checkout not called for worktree path, got %q", gt.checkoutBranch)
 	}
 }

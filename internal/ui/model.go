@@ -39,8 +39,11 @@ type Services struct {
 	RespawnNucleus func(id string) error // nil disables binding
 	AddNeuron     func(nucleusID, neuronType, profile string) error // nil disables neuron add
 	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
-	// LoadGitHubPRs fetches open PRs involving the current user; nil disables the GitHub view.
-	LoadGitHubPRs func() ([]github.PR, error)
+	// LoadGitHubPRs fetches open PRs matching the given filter; nil disables the GitHub view.
+	LoadGitHubPRs func(filter github.PRFilter) ([]github.PR, error)
+	// LoadGitHubFilterConfig returns the static data needed to populate the filter modal.
+	// Returns (myLogin, teammates, repoNames). nil disables the filter modal.
+	LoadGitHubFilterConfig func() (myLogin string, teammates []string, repoNames []string, err error)
 	// LoadGitHubPR fetches full detail for one PR; nil disables the detail view.
 	LoadGitHubPR func(repo string, number int) (*github.PRDetail, error)
 	// ListBranches returns local branch names for a repo; used in the review workflow.
@@ -135,6 +138,12 @@ type Model struct {
 	githubDetailFileCursor int    // selected file index within d.Files
 	githubFileExpanded     []bool // per-file accordion expansion state
 
+	// github filter modal state
+	githubFilter       github.PRFilter  // committed filter applied on every load
+	githubFilterDraft  github.PRFilter  // in-progress edits while modal is open
+	githubFilterItems  []filterItem     // flat item list built when modal opens
+	githubFilterCursor int              // cursor within githubFilterItems
+
 	// transient status bar message
 	lastErr string
 }
@@ -211,6 +220,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				repos = []string{"."}
 			}
 			m.nucleusModal = m.nucleusModal.SetRepos(repos)
+			// In review mode the repo is now resolved; load branches immediately.
+			if m.state == stateNucleusModal && m.nucleusModal.IsReviewMode() {
+				return m, m.loadBranchesForModalCmd()
+			}
 		}
 		return m, nil
 
@@ -285,6 +298,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailPRDetail = msg.detail
 		}
 		return m, nil
+
+	case githubFilterConfigLoadedMsg:
+		if msg.err != nil {
+			m.lastErr = msg.err.Error()
+			return m, nil
+		}
+		m.githubFilterItems = buildFilterItems(msg.myLogin, msg.teammates, msg.repoNames, m.githubFilter)
+		m.githubFilterCursor = firstSelectableIdx(m.githubFilterItems)
+		m.githubFilterDraft = m.githubFilter
+		m.state = stateGitHubFilter
+		return m, nil
+
+	case githubFilterConfirmedMsg:
+		m.githubFilter = msg.filter
+		m.githubLoading = true
+		m.state = stateGitHubView
+		return m, m.loadGitHubPRsCmd()
 
 	case tickMsg:
 		return m, tea.Batch(m.captureActivePaneCmd(), m.tickCmd())
@@ -369,6 +399,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateGitHubView(msg)
 		case stateGitHubPRDetail:
 			return m.updateGitHubPRDetail(msg)
+		case stateGitHubFilter:
+			return m.updateGitHubFilter(msg)
 		case stateHelp:
 			// Any key dismisses help.
 			m.state = stateList
@@ -400,6 +432,8 @@ func (m Model) View() string {
 		return m.viewGitHubView()
 	case stateGitHubPRDetail:
 		return m.viewGitHubPRDetail()
+	case stateGitHubFilter:
+		return m.renderOverlay(m.viewGitHubView(), m.viewGitHubFilter())
 	default:
 		base := m.viewMain()
 		switch m.state {
@@ -631,14 +665,15 @@ func (m Model) loadProfilesCmd() tea.Cmd {
 	}
 }
 
-// loadGitHubPRsCmd fires an async fetch of PRs from GitHub.
+// loadGitHubPRsCmd fires an async fetch of PRs from GitHub using the active filter.
 func (m Model) loadGitHubPRsCmd() tea.Cmd {
 	if m.services.LoadGitHubPRs == nil {
 		return nil
 	}
 	svc := m.services.LoadGitHubPRs
+	f := m.githubFilter
 	return func() tea.Msg {
-		prs, err := svc()
+		prs, err := svc(f)
 		return githubPRsLoadedMsg{prs: prs, err: err}
 	}
 }
@@ -664,6 +699,19 @@ func (m Model) loadGitHubPRPreviewCmd(repo string, number int) tea.Cmd {
 	return func() tea.Msg {
 		detail, err := svc(repo, number)
 		return githubPRPreviewLoadedMsg{number: number, detail: detail, err: err}
+	}
+}
+
+// loadGitHubFilterConfigCmd fires an async load of the static config needed
+// to populate the GitHub filter modal.
+func (m Model) loadGitHubFilterConfigCmd() tea.Cmd {
+	if m.services.LoadGitHubFilterConfig == nil {
+		return nil
+	}
+	svc := m.services.LoadGitHubFilterConfig
+	return func() tea.Msg {
+		myLogin, teammates, repoNames, err := svc()
+		return githubFilterConfigLoadedMsg{myLogin: myLogin, teammates: teammates, repoNames: repoNames, err: err}
 	}
 }
 

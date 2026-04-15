@@ -74,7 +74,7 @@ func TestListPRs_ParsesResponse(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "mytoken", "")
-	prs, err := c.ListPRs()
+	prs, err := c.ListPRs("is:pr is:open involves:@me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,14 +121,14 @@ func TestListPRs_SendsBearerToken(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "secret-token", "")
-	_, _ = c.ListPRs()
+	_, _ = c.ListPRs("is:pr is:open involves:@me")
 
 	if gotAuth != "Bearer secret-token" {
 		t.Errorf("Authorization: got %q, want %q", gotAuth, "Bearer secret-token")
 	}
 }
 
-func TestListPRs_OrgAddsToQuery(t *testing.T) {
+func TestListPRs_QueryPassedThrough(t *testing.T) {
 	var gotRawQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRawQuery = r.URL.RawQuery
@@ -136,12 +136,15 @@ func TestListPRs_OrgAddsToQuery(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := igithub.New(srv.URL, "token", "myorg")
-	_, _ = c.ListPRs()
+	c := igithub.New(srv.URL, "token", "")
+	_, _ = c.ListPRs("is:pr is:open author:alice org:myorg")
 
 	decoded, err := url.QueryUnescape(gotRawQuery)
 	if err != nil {
 		t.Fatalf("could not unescape query %q: %v", gotRawQuery, err)
+	}
+	if !strings.Contains(decoded, "author:alice") {
+		t.Errorf("query %q does not contain 'author:alice'", decoded)
 	}
 	if !strings.Contains(decoded, "org:myorg") {
 		t.Errorf("query %q does not contain 'org:myorg'", decoded)
@@ -156,7 +159,7 @@ func TestListPRs_DetectsMergedState(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "token", "")
-	prs, err := c.ListPRs()
+	prs, err := c.ListPRs("is:pr is:open involves:@me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +179,7 @@ func TestListPRs_DetectsDraftState(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "token", "")
-	prs, err := c.ListPRs()
+	prs, err := c.ListPRs("is:pr is:open involves:@me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +201,7 @@ func TestListPRs_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "bad-token", "")
-	_, err := c.ListPRs()
+	_, err := c.ListPRs("is:pr is:open involves:@me")
 	if err == nil {
 		t.Fatal("expected error for 401, got nil")
 	}
@@ -361,7 +364,7 @@ func TestListPRs_RepoFromURL_Fork(t *testing.T) {
 	defer srv.Close()
 
 	c := igithub.New(srv.URL, "token", "")
-	prs, err := c.ListPRs()
+	prs, err := c.ListPRs("is:pr is:open involves:@me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

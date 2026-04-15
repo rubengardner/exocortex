@@ -109,6 +109,13 @@ func (g *Git) CheckoutExisting(repoPath, worktreePath, branch string) error {
 	return g.AddWorktree(repoPath, worktreePath, branch, false)
 }
 
+// Checkout switches the repo at repoPath to an existing branch.
+// Used when no worktree is created and the repo itself must be on the right branch.
+func (g *Git) Checkout(repoPath, branch string) error {
+	_, err := g.runner.Run("git", "-C", repoPath, "checkout", branch)
+	return err
+}
+
 // Returns an empty slice if there are none.
 func (g *Git) ModifiedFiles(worktreePath string) ([]string, error) {
 	out, err := g.runner.Run("git", "-C", worktreePath, "ls-files", "-m")

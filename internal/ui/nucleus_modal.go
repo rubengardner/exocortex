@@ -37,6 +37,7 @@ type NucleusModalContext struct {
 	JiraSummary string
 	PRNumber    int
 	PRRepo      string
+	PRTitle     string // pre-fills the task description in review mode
 	PRBranch    string // pre-fills the branch filter in review mode
 }
 
@@ -151,8 +152,12 @@ func (m NucleusModal) Open(ctx NucleusModalContext) (NucleusModal, tea.Cmd) {
 	}
 	if ctx.Mode == ModeReview {
 		m.branchFilter = ctx.PRBranch
+		m.createWorktree = false
 		// Auto-fill task description so the form can submit without extra typing.
-		if ctx.PRNumber != 0 {
+		if ctx.PRTitle != "" {
+			m.taskInput.SetValue("Review: " + ctx.PRTitle)
+			m.taskInput.CursorEnd()
+		} else if ctx.PRNumber != 0 {
 			m.taskInput.SetValue(fmt.Sprintf("Review PR #%d", ctx.PRNumber))
 			m.taskInput.CursorEnd()
 		}
@@ -164,15 +169,29 @@ func (m NucleusModal) Open(ctx NucleusModalContext) (NucleusModal, tea.Cmd) {
 }
 
 // SetRepos provides the available repositories. When there is exactly one it is
-// auto-selected and the repo field is hidden from the form.
+// auto-selected and the repo field is hidden from the form. When prRepo is set,
+// the cursor is advanced to the repo whose base name matches the PR's repo name.
 func (m NucleusModal) SetRepos(repos []string) NucleusModal {
 	m.repos = repos
 	m.reposReady = true
-	if m.repoCursor >= len(repos) {
-		m.repoCursor = 0
+	m.repoCursor = 0
+	if m.prRepo != "" {
+		prShort := m.prRepo
+		if idx := strings.LastIndex(m.prRepo, "/"); idx >= 0 {
+			prShort = m.prRepo[idx+1:]
+		}
+		for i, r := range repos {
+			if filepath.Base(r) == prShort {
+				m.repoCursor = i
+				break
+			}
+		}
 	}
 	return m
 }
+
+// IsReviewMode reports whether the modal is currently in review mode.
+func (m NucleusModal) IsReviewMode() bool { return m.mode == ModeReview }
 
 // SetProfiles provides the available Claude profiles.
 func (m NucleusModal) SetProfiles(names []string, paths map[string]string) NucleusModal {
@@ -486,15 +505,21 @@ func (m NucleusModal) trySubmit() (NucleusModal, ModalRequest, tea.Cmd) {
 		branch = strings.TrimSpace(m.branchInput.Value())
 	} else {
 		filtered := m.filteredBranches()
-		if len(filtered) == 0 {
+		switch {
+		case len(filtered) > 0:
+			if m.branchCursor >= len(filtered) {
+				m.branchCursor = 0
+			}
+			branch = filtered[m.branchCursor]
+		case m.branchFilter != "":
+			// Branch pre-filled from PR context — use it directly even if the
+			// async branch list hasn't loaded yet or doesn't contain a match.
+			branch = m.branchFilter
+		default:
 			m.err = "select a branch to review"
 			m.focused = ModalFieldBranch
 			return m, ModalRequest{}, nil
 		}
-		if m.branchCursor >= len(filtered) {
-			m.branchCursor = 0
-		}
-		branch = filtered[m.branchCursor]
 	}
 
 	return m, ModalRequest{Submit: &ModalSubmit{
@@ -636,37 +661,54 @@ func (m NucleusModal) renderTaskField(sb *strings.Builder) {
 }
 
 func (m NucleusModal) renderBranchField(sb *strings.Builder) {
+	// branchContentLines is the fixed number of content lines after the label.
+	// Review mode max = 1 filter line + 5 branch rows. Develop mode pads to match.
+	const branchContentLines = 6
+
 	sb.WriteString(m.fieldLabel(ModalFieldBranch, "Branch") + "\n")
+
+	linesUsed := 0
 	if m.mode == ModeDevelop {
 		sb.WriteString(m.branchInput.View())
-		return
+		linesUsed = 1
+	} else {
+		// Review mode: filter text + branch list.
+		sb.WriteString(StyleDim.Render("Filter: ") + m.branchFilter + "█\n")
+		linesUsed++
+		if !m.branchesReady {
+			sb.WriteString(StyleDim.Render("  loading branches…"))
+			linesUsed++
+		} else {
+			filtered := m.filteredBranches()
+			if len(filtered) == 0 {
+				sb.WriteString(StyleDim.Render("  no matching branches"))
+				linesUsed++
+			} else {
+				const maxShow = 5
+				for i, b := range filtered {
+					if i >= maxShow {
+						sb.WriteString(StyleDim.Render(fmt.Sprintf("  … %d more", len(filtered)-maxShow)))
+						linesUsed++
+						break
+					}
+					if i == m.branchCursor {
+						sb.WriteString(StyleSelected.Render("  > " + truncate(b, 50)))
+					} else {
+						sb.WriteString("    " + truncate(b, 50))
+					}
+					linesUsed++
+					if i < len(filtered)-1 && i < maxShow-1 {
+						sb.WriteString("\n")
+					}
+				}
+			}
+		}
 	}
 
-	// Review mode: filter text + branch list.
-	sb.WriteString(StyleDim.Render("Filter: ") + m.branchFilter + "█\n")
-	if !m.branchesReady {
-		sb.WriteString(StyleDim.Render("  loading branches…"))
-		return
-	}
-	filtered := m.filteredBranches()
-	if len(filtered) == 0 {
-		sb.WriteString(StyleDim.Render("  no matching branches"))
-		return
-	}
-	const maxShow = 5
-	for i, b := range filtered {
-		if i >= maxShow {
-			sb.WriteString(StyleDim.Render(fmt.Sprintf("  … %d more", len(filtered)-maxShow)))
-			break
-		}
-		if i == m.branchCursor {
-			sb.WriteString(StyleSelected.Render("  > " + truncate(b, 50)))
-		} else {
-			sb.WriteString("    " + truncate(b, 50))
-		}
-		if i < len(filtered)-1 && i < maxShow-1 {
-			sb.WriteString("\n")
-		}
+	// Pad with empty lines to reach fixed height so the modal doesn't resize on mode switch.
+	for linesUsed < branchContentLines {
+		sb.WriteString("\n")
+		linesUsed++
 	}
 }
 

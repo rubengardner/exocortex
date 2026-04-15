@@ -16,6 +16,7 @@ const (
 	StateNeuronAdd                      // neuron type picker overlay (from detail)
 	StateGitHubView                     // GitHub PR list view
 	StateGitHubPRDetail                 // full-screen GitHub PR detail
+	StateGitHubFilter                   // filter modal overlay on top of StateGitHubView
 	StateNucleusModal                   // unified new-nucleus modal (from any screen)
 
 	// Deprecated aliases kept for test compatibility — map to StateNucleusModal.
@@ -37,5 +38,6 @@ const (
 	stateNeuronAdd      = StateNeuronAdd
 	stateGitHubView     = StateGitHubView
 	stateGitHubPRDetail = StateGitHubPRDetail
+	stateGitHubFilter   = StateGitHubFilter
 	stateNucleusModal   = StateNucleusModal
 )

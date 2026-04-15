@@ -43,6 +43,17 @@ type Nucleus struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Workdir returns the directory that new tmux windows for this nucleus should
+// open in. When a worktree exists it is preferred; otherwise the repo root is
+// used. This covers the case where a nucleus was created without a worktree
+// (e.g. a review nucleus with createWorktree=false).
+func (n *Nucleus) Workdir() string {
+	if n.WorktreePath != "" {
+		return n.WorktreePath
+	}
+	return n.RepoPath
+}
+
 // FindNeuronByID returns a pointer to the Neuron with the given ID.
 // Returns an error if the Neuron is not found.
 func (n *Nucleus) FindNeuronByID(id string) (*Neuron, error) {

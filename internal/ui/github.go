@@ -9,6 +9,16 @@ import (
 	"github.com/ruben_gardner/exocortex/internal/github"
 )
 
+// ── filterItem ────────────────────────────────────────────────────────────────
+
+// filterItem is a single row in the GitHub filter modal.
+type filterItem struct {
+	label    string // display text
+	value    string // author login, "!me", "owner/repo", or "" for headers
+	kind     string // "author" | "repo" | "header" — headers are non-selectable
+	selected bool
+}
+
 // ── StateGitHubView ──────────────────────────────────────────────────────────
 
 // updateGitHubView handles key events for the GitHub PR list.
@@ -79,11 +89,18 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			Mode:     ModeReview,
 			PRNumber: pr.Number,
 			PRRepo:   pr.Repo,
+			PRTitle:  pr.Title,
 			PRBranch: pr.Branch,
 		})
 
 	case matchKey(msg, m.keys.New):
 		return m.openNucleusModal(NucleusModalContext{})
+
+	case matchKey(msg, m.keys.Filter):
+		if m.services.LoadGitHubFilterConfig == nil {
+			return m, nil
+		}
+		return m, m.loadGitHubFilterConfigCmd()
 	}
 	return m, nil
 }
@@ -151,6 +168,7 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			Mode:     ModeReview,
 			PRNumber: d.Number,
 			PRRepo:   d.Repo,
+			PRTitle:  d.Title,
 			PRBranch: d.Branch,
 		})
 
@@ -277,7 +295,13 @@ func (m Model) viewGitHubSplitBody(accordionMode bool) string {
 }
 
 func (m Model) viewGitHubHeader() string {
-	label := fmt.Sprintf("%d PR(s)", len(m.githubPRs))
+	indicator := m.viewGitHubFilterIndicator()
+	var label string
+	if indicator != "" {
+		label = fmt.Sprintf("%d PR(s)  %s", len(m.githubPRs), StyleMuted.Render(indicator))
+	} else {
+		label = fmt.Sprintf("%d PR(s)", len(m.githubPRs))
+	}
 	left := StyleHeader.Render("◈  GITHUB PULL REQUESTS")
 	right := StyleMuted.Render(label)
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -312,10 +336,14 @@ func (m Model) renderGitHubListPanel(listW int) string {
 		}
 		title := truncate(pr.Title, titleW)
 		age := fmtAge(pr.UpdatedAt)
+		repoShort := pr.Repo
+		if idx := strings.LastIndex(pr.Repo, "/"); idx >= 0 {
+			repoShort = pr.Repo[idx+1:]
+		}
 		branchStr := truncate(pr.Branch, listW-16)
 
 		line1 := fmt.Sprintf(" %s %-7s %s", dot, numStr, title)
-		line2 := "   " + pr.State + "  " + branchStr + "  " + age
+		line2 := "   " + repoShort + "  " + branchStr + "  " + age
 
 		if i == m.githubPRCursor {
 			sb.WriteString(StyleSelected.Width(listW).Render(line1) + "\n")
@@ -464,6 +492,9 @@ func (m Model) viewGitHubStatusBar() string {
 		hint += "   R review"
 	}
 	hint += "   r refresh"
+	if m.services.LoadGitHubFilterConfig != nil {
+		hint += "   f filter"
+	}
 	return StyleHelp.Render(hint)
 }
 
@@ -610,3 +641,205 @@ func githubWordWrap(text string, width int) []string {
 	}
 	return result
 }
+
+// ── StateGitHubFilter (filter modal) ─────────────────────────────────────────
+
+// buildFilterItems constructs the flat item list for the filter modal from the
+// static config values and the currently committed filter (to pre-tick selections).
+func buildFilterItems(myLogin string, teammates, repoNames []string, committed github.PRFilter) []filterItem {
+	authorSet := make(map[string]bool)
+	for _, a := range committed.Authors {
+		authorSet[a] = true
+	}
+	repoSet := make(map[string]bool)
+	for _, r := range committed.Repos {
+		repoSet[r] = true
+	}
+
+	var items []filterItem
+
+	// AUTHORS section — only when myLogin is known or teammates are configured.
+	if myLogin != "" || len(teammates) > 0 {
+		items = append(items, filterItem{label: "AUTHORS", kind: "header"})
+		if myLogin != "" {
+			items = append(items, filterItem{
+				label:    "me  (your own PRs)",
+				value:    myLogin,
+				kind:     "author",
+				selected: authorSet[myLogin],
+			})
+			items = append(items, filterItem{
+				label:    "others  (everyone but you)",
+				value:    "!me",
+				kind:     "author",
+				selected: authorSet["!me"],
+			})
+		}
+		for _, t := range teammates {
+			items = append(items, filterItem{
+				label:    t,
+				value:    t,
+				kind:     "author",
+				selected: authorSet[t],
+			})
+		}
+	}
+
+	// REPOSITORIES section — only when repo names are available.
+	if len(repoNames) > 0 {
+		items = append(items, filterItem{label: "REPOSITORIES", kind: "header"})
+		for _, r := range repoNames {
+			items = append(items, filterItem{
+				label:    r,
+				value:    r,
+				kind:     "repo",
+				selected: repoSet[r],
+			})
+		}
+	}
+
+	return items
+}
+
+// firstSelectableIdx returns the index of the first non-header item, or 0.
+func firstSelectableIdx(items []filterItem) int {
+	for i, it := range items {
+		if it.kind != "header" {
+			return i
+		}
+	}
+	return 0
+}
+
+// collectFilter builds a PRFilter from the selected items in the modal.
+// "!me" sentinel is preserved as-is; the service layer handles expansion.
+func collectFilter(items []filterItem) github.PRFilter {
+	var f github.PRFilter
+	for _, it := range items {
+		if !it.selected {
+			continue
+		}
+		switch it.kind {
+		case "author":
+			f.Authors = append(f.Authors, it.value)
+		case "repo":
+			f.Repos = append(f.Repos, it.value)
+		}
+	}
+	return f
+}
+
+// updateGitHubFilter handles key events for the filter modal.
+func (m Model) updateGitHubFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case matchKey(msg, m.keys.Cancel), matchKey(msg, m.keys.Quit):
+		m.state = stateGitHubView
+		return m, nil
+
+	case matchKey(msg, m.keys.Up):
+		m.githubFilterCursor = prevSelectableIdx(m.githubFilterItems, m.githubFilterCursor)
+
+	case matchKey(msg, m.keys.Down):
+		m.githubFilterCursor = nextSelectableIdx(m.githubFilterItems, m.githubFilterCursor)
+
+	case msg.Type == tea.KeySpace:
+		if m.githubFilterCursor < len(m.githubFilterItems) {
+			it := &m.githubFilterItems[m.githubFilterCursor]
+			if it.kind != "header" {
+				it.selected = !it.selected
+			}
+		}
+
+	case matchKey(msg, m.keys.Submit):
+		f := collectFilter(m.githubFilterItems)
+		return m, func() tea.Msg { return githubFilterConfirmedMsg{filter: f} }
+
+	case msg.String() == "c":
+		for i := range m.githubFilterItems {
+			m.githubFilterItems[i].selected = false
+		}
+	}
+	return m, nil
+}
+
+// nextSelectableIdx returns the index of the next non-header item after cur,
+// wrapping around. Returns cur if there are no selectable items.
+func nextSelectableIdx(items []filterItem, cur int) int {
+	n := len(items)
+	for i := 1; i <= n; i++ {
+		idx := (cur + i) % n
+		if items[idx].kind != "header" {
+			return idx
+		}
+	}
+	return cur
+}
+
+// prevSelectableIdx returns the index of the previous non-header item before cur,
+// wrapping around. Returns cur if there are no selectable items.
+func prevSelectableIdx(items []filterItem, cur int) int {
+	n := len(items)
+	for i := 1; i <= n; i++ {
+		idx := (cur - i + n) % n
+		if items[idx].kind != "header" {
+			return idx
+		}
+	}
+	return cur
+}
+
+// viewGitHubFilter renders the filter modal content.
+func (m Model) viewGitHubFilter() string {
+	if len(m.githubFilterItems) == 0 {
+		return StyleDim.Render("  filter not configured")
+	}
+
+	var sb strings.Builder
+	sb.WriteString(StyleTitle.Render("Filter PRs") + "\n\n")
+
+	for i, it := range m.githubFilterItems {
+		switch it.kind {
+		case "header":
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(StyleDim.Render("  "+it.label) + "\n")
+			sb.WriteString(StyleDim.Render("  "+strings.Repeat("─", clamp(len(it.label)+2, 4, 36))) + "\n")
+		default:
+			check := "[ ]"
+			if it.selected {
+				check = "[x]"
+			}
+			row := fmt.Sprintf("  %s %s", check, it.label)
+			if i == m.githubFilterCursor {
+				sb.WriteString(StyleSelected.Render(row) + "\n")
+			} else {
+				sb.WriteString(row + "\n")
+			}
+		}
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(StyleHelp.Render("  space toggle · enter confirm · esc cancel · c clear"))
+
+	return sb.String()
+}
+
+// viewGitHubFilterIndicator returns a short "[filtered: ...]" label or "" when
+// the active filter is zero. Used in the PR list header.
+func (m Model) viewGitHubFilterIndicator() string {
+	f := m.githubFilter
+	if f.IsZero() {
+		return ""
+	}
+	var parts []string
+	if len(f.Authors) > 0 {
+		parts = append(parts, fmt.Sprintf("%d author(s)", len(f.Authors)))
+	}
+	if len(f.Repos) > 0 {
+		parts = append(parts, fmt.Sprintf("%d repo(s)", len(f.Repos)))
+	}
+	return "[filtered: " + strings.Join(parts, " · ") + "]"
+}
+
+

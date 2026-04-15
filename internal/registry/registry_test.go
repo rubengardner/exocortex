@@ -349,6 +349,26 @@ func TestNucleus_PrimaryNeuron_NoNeurons(t *testing.T) {
 	}
 }
 
+func TestNucleus_Workdir_PrefersWorktree(t *testing.T) {
+	n := registry.Nucleus{
+		RepoPath:     "/repo",
+		WorktreePath: "/repo/.worktrees/abc",
+	}
+	if got := n.Workdir(); got != "/repo/.worktrees/abc" {
+		t.Fatalf("expected worktree path, got %q", got)
+	}
+}
+
+func TestNucleus_Workdir_FallsBackToRepo(t *testing.T) {
+	n := registry.Nucleus{
+		RepoPath:     "/repo",
+		WorktreePath: "",
+	}
+	if got := n.Workdir(); got != "/repo" {
+		t.Fatalf("expected repo path when worktree is empty, got %q", got)
+	}
+}
+
 func TestNucleus_NvimNeuron(t *testing.T) {
 	n := sampleNucleus("nvm1")
 	if n.NvimNeuron() != nil {

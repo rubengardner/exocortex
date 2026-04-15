@@ -49,7 +49,7 @@ func executeRespawn(id string, reg nucleusSvc, tm tmuxSvc, out io.Writer) error 
 	}
 
 	// Open a new window in the worktree and restart Claude Code.
-	target, err := tm.NewWindow(nucleus.WorktreePath, nucleus.TaskDescription)
+	target, err := tm.NewWindow(nucleus.Workdir(), nucleus.TaskDescription)
 	if err != nil {
 		return fmt.Errorf("tmux new-window: %w", err)
 	}

@@ -74,10 +74,12 @@ func (f *fakeRegistryNeuronAdd) UpdateNeuronTarget(nID, neuID, target string) er
 
 type fakeTmuxNeuronAdd struct {
 	newWindowTarget string
+	newWindowDir    string
 	sentKeys        string
 }
 
 func (f *fakeTmuxNeuronAdd) NewWindow(workdir, name string) (string, error) {
+	f.newWindowDir = workdir
 	f.newWindowTarget = "main:99.0"
 	return f.newWindowTarget, nil
 }
@@ -170,5 +172,49 @@ func TestExecuteAddNeuron_WithClaudeConfigDir(t *testing.T) {
 	}
 	if reg.addedNeuron.Profile != "~/.claude-work" {
 		t.Fatalf("expected profile stored, got %q", reg.addedNeuron.Profile)
+	}
+}
+
+func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
+	reg := &fakeRegistryNeuronAdd{
+		nuclei: []registry.Nucleus{
+			{
+				ID:           "nucl1",
+				RepoPath:     "/repo",
+				WorktreePath: "/repo/.worktrees/nucl1",
+				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+			},
+		},
+	}
+	tm := &fakeTmuxNeuronAdd{}
+
+	if err := executeAddNeuron("nucl1", "shell", "", reg, tm); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tm.newWindowDir != "/repo/.worktrees/nucl1" {
+		t.Fatalf("expected worktree path, got %q", tm.newWindowDir)
+	}
+}
+
+func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
+	// Nuclei created without a worktree (e.g. review with createWorktree=false)
+	// must open new neurons in RepoPath, not in an empty string.
+	reg := &fakeRegistryNeuronAdd{
+		nuclei: []registry.Nucleus{
+			{
+				ID:           "nucl1",
+				RepoPath:     "/repo",
+				WorktreePath: "", // no worktree
+				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+			},
+		},
+	}
+	tm := &fakeTmuxNeuronAdd{}
+
+	if err := executeAddNeuron("nucl1", "shell", "", reg, tm); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tm.newWindowDir != "/repo" {
+		t.Fatalf("expected repo path when WorktreePath is empty, got %q", tm.newWindowDir)
 	}
 }

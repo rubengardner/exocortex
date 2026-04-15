@@ -18,6 +18,7 @@ func (g *fakeGitNvim) ModifiedFiles(worktreePath string) ([]string, error)   { r
 func (g *fakeGitNvim) BranchExists(repoPath, branch string) (bool, error)    { return false, nil }
 func (g *fakeGitNvim) AheadCommits(worktreePath string) ([]string, error)    { return nil, nil }
 func (g *fakeGitNvim) ListBranches(repoPath string) ([]string, error)        { return nil, nil }
+func (g *fakeGitNvim) Checkout(repoPath, branch string) error                { return nil }
 
 type fakeRegistryNvim struct {
 	nuclei              []registry.Nucleus

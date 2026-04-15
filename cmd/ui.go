@@ -153,13 +153,25 @@ func buildServices() ui.Services {
 			client := ijira.New(cfg.Jira.BaseURL, cfg.Jira.Email, cfg.Jira.APIToken)
 			return client.FetchIssue(key)
 		},
-		LoadGitHubPRs: func() ([]igithub.PR, error) {
+		LoadGitHubPRs: func(f igithub.PRFilter) ([]igithub.PR, error) {
 			cfg, err := iconfig.Load(iconfig.DefaultPath())
 			if err != nil || cfg.GitHub == nil {
 				return nil, err
 			}
 			client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
-			return client.ListPRs()
+			query := igithub.BuildQuery(cfg.GitHub.MyLogin, cfg.GitHub.Org, f)
+			prs, err := client.ListPRs(query)
+			if err != nil {
+				return nil, err
+			}
+			return igithub.ApplyRepoFilter(prs, f.Repos), nil
+		},
+		LoadGitHubFilterConfig: func() (string, []string, []string, error) {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil || cfg.GitHub == nil {
+				return "", nil, nil, err
+			}
+			return cfg.GitHub.MyLogin, cfg.GitHub.Teammates, cfg.GitHubRepoNames(), nil
 		},
 		LoadGitHubPR: func(repo string, number int) (*igithub.PRDetail, error) {
 			cfg, err := iconfig.Load(iconfig.DefaultPath())

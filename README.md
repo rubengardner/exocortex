@@ -200,6 +200,92 @@ Status is a manual label — `idle`, `working`, or `blocked`. exocortex does not
 
 ---
 
+## Configuration
+
+All settings live at `~/.config/exocortex/config.json`. The file is created
+automatically on first use. All sections are optional unless noted.
+
+```json
+{
+  "repos": [
+    "/abs/path/to/repo-a",
+    "/abs/path/to/repo-b"
+  ],
+  "profiles": {
+    "work":     "~/.claude-work",
+    "personal": "~/.claude-personal"
+  },
+  "jira": {
+    "base_url":  "https://yourcompany.atlassian.net",
+    "email":     "you@company.com",
+    "api_token": "your-token",
+    "project":   "PROJ",
+    "board_id":  75,
+    "statuses":  ["In Progress", "Ready for CR", "Code Review"],
+    "team_id":   "uuid-of-your-team"
+  },
+  "github": {
+    "token":     "ghp_...",
+    "org":       "YourOrg",
+    "my_login":  "your-github-login",
+    "teammates": ["alice", "bob", "carol"]
+  }
+}
+```
+
+### `repos`
+
+List of absolute paths to git repositories shown in the TUI repo picker when
+creating a new agent. If empty, the current directory is used.
+
+The GitHub filter modal also derives repository names from this list:
+`org/dirname` is inferred automatically (e.g. `/path/to/badger-go` →
+`YourOrg/badger-go`). No separate list is needed.
+
+### `profiles`
+
+Maps a display name to a `CLAUDE_CONFIG_DIR` path. When non-empty, a profile
+picker appears before the new-agent form. Useful for separating work and personal
+Claude accounts.
+
+### `jira`
+
+Enables the Jira kanban board view (`b` in the TUI).
+
+| Field        | Required | Description                                              |
+|--------------|----------|----------------------------------------------------------|
+| `base_url`   | yes      | Atlassian base URL, e.g. `https://yourco.atlassian.net`  |
+| `email`      | yes      | Your Atlassian account email                             |
+| `api_token`  | yes      | Atlassian API token                                      |
+| `project`    | yes      | Jira project key, e.g. `PROJ`                           |
+| `board_id`   | no       | Agile board ID. When set, uses the board API instead of JQL search |
+| `statuses`   | no       | Column names to display. Defaults to `["In Progress", "Ready for CR", "Code Review"]` |
+| `team_id`    | no       | Jira team UUID. When set, filters the board to that team |
+
+### `github`
+
+Enables the GitHub PR view (`G` in the TUI).
+
+| Field        | Required | Description                                                        |
+|--------------|----------|--------------------------------------------------------------------|
+| `token`      | yes      | GitHub personal access token (needs `repo` and `read:org` scopes) |
+| `org`        | no       | Org scope for searches. Also used to derive repo names from `repos` |
+| `my_login`   | no       | Your GitHub login. Enables "me" and "others" rows in the filter modal |
+| `teammates`  | no       | GitHub logins of teammates. Each gets a toggle in the filter modal |
+
+#### GitHub filter modal
+
+Press `f` from the PR list to open the filter modal. You can filter by:
+
+- **Authors** — "me" (your own PRs), "others" (everyone except you), or named
+  teammates. Multiple selections are OR'd together.
+- **Repositories** — any subset of repos derived from the top-level `repos` list.
+
+An active filter is shown in the PR list header: `[filtered: 2 authors · 3 repos]`.
+Filters reset when you quit; they are not persisted.
+
+---
+
 ## Project structure
 
 ```

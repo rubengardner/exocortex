@@ -61,15 +61,10 @@ func New(baseURL, token, org string) *Client {
 	}
 }
 
-// ListPRs fetches open PRs involving the authenticated user via the GitHub
-// search/issues endpoint.
-func (c *Client) ListPRs() ([]PR, error) {
-	q := "is:pr is:open involves:@me"
-	if c.org != "" {
-		q += " org:" + c.org
-	}
-
-	endpoint := c.baseURL + "/search/issues?q=" + url.QueryEscape(q) + "&sort=updated&per_page=50"
+// ListPRs fetches PRs matching the given GitHub search query via the search/issues
+// endpoint. Use BuildQuery to construct the query from a PRFilter.
+func (c *Client) ListPRs(query string) ([]PR, error) {
+	endpoint := c.baseURL + "/search/issues?q=" + url.QueryEscape(query) + "&sort=updated&per_page=50"
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("github: build request: %w", err)

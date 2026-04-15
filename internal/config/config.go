@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
 
 // JiraConfig holds credentials and settings for the Jira board view.
 type JiraConfig struct {
@@ -28,8 +30,25 @@ func (j *JiraConfig) ResolvedStatuses() []string {
 
 // GitHubConfig holds credentials and settings for the GitHub PR view.
 type GitHubConfig struct {
-	Token string `json:"token"`            // Personal access token
-	Org   string `json:"org,omitempty"`    // Optional: filter PRs to this org
+	Token     string   `json:"token"`
+	Org       string   `json:"org,omitempty"`
+	MyLogin   string   `json:"my_login,omitempty"`   // authenticated user's GitHub login
+	Teammates []string `json:"teammates,omitempty"`  // teammates' GitHub logins for filter modal
+}
+
+// GitHubRepoNames returns "Org/dirname" for every path in Config.Repos.
+// Used to populate the REPOSITORIES section of the GitHub filter modal.
+// Returns nil when GitHub is unconfigured, Org is empty, or Repos is empty.
+func (c *Config) GitHubRepoNames() []string {
+	if c.GitHub == nil || c.GitHub.Org == "" || len(c.Repos) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(c.Repos))
+	for _, p := range c.Repos {
+		p = strings.TrimRight(p, "/")
+		names = append(names, c.GitHub.Org+"/"+filepath.Base(p))
+	}
+	return names
 }
 
 // Config holds user-level settings for exocortex.

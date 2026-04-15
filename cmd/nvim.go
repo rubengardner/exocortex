@@ -38,7 +38,7 @@ func executeNvimFile(id, filePath string, line int, reg nucleusSvc, gt gitSvc, t
 	}
 
 	// No live nvim window — open a new one.
-	target, err := tm.NewWindow(nucleus.WorktreePath, id+"-DEV")
+	target, err := tm.NewWindow(nucleus.Workdir(),id+"-DEV")
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func executeNvim(id string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 		file = files[0]
 	}
 
-	target, err := tm.NewWindow(nucleus.WorktreePath, id+"-DEV")
+	target, err := tm.NewWindow(nucleus.Workdir(),id+"-DEV")
 	if err != nil {
 		return err
 	}

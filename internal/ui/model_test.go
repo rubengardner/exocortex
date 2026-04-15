@@ -293,7 +293,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 			rec.prRepo = prRepo
 			return nil
 		},
-		LoadGitHubPRs: func() ([]github.PR, error) {
+		LoadGitHubPRs: func(_ github.PRFilter) ([]github.PR, error) {
 			return []github.PR{{Number: pr.number, Repo: pr.repo, Branch: pr.branch, State: "open"}}, nil
 		},
 	}

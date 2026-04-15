@@ -163,6 +163,11 @@ func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, 
 		}
 
 		windowDir = worktreePath
+	} else {
+		// No worktree — switch the repo itself to the PR branch.
+		if err := gt.Checkout(repoPath, branch); err != nil {
+			return fmt.Errorf("git checkout %s: %w", branch, err)
+		}
 	}
 
 	target, err := tm.NewWindow(windowDir, task)

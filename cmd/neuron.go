@@ -21,7 +21,7 @@ func executeAddNeuron(nucleusID, neuronType, claudeConfigDir string, reg nucleus
 
 	neuronID := nextNeuronID(n.Neurons, neuronType)
 
-	target, err := tm.NewWindow(n.WorktreePath, neuronType+"-"+nucleusID)
+	target, err := tm.NewWindow(n.Workdir(), neuronType+"-"+nucleusID)
 	if err != nil {
 		return fmt.Errorf("tmux new-window: %w", err)
 	}

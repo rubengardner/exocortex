@@ -24,6 +24,7 @@ type KeyMap struct {
 	GitHub        key.Binding
 	AddNeuron     key.Binding
 	OpenBrowser   key.Binding
+	Filter        key.Binding
 }
 
 // DefaultKeys returns the standard key bindings.
@@ -108,6 +109,10 @@ func DefaultKeys() KeyMap {
 		OpenBrowser: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),
+		),
+		Filter: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "filter PRs"),
 		),
 	}
 }

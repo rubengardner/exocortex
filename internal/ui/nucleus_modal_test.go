@@ -84,6 +84,34 @@ func TestNucleusModal_Open_PRContext_SetsReviewMode(t *testing.T) {
 	}
 }
 
+func TestNucleusModal_Open_PRTitle_SetsTaskToReviewPrefix(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:     ModeReview,
+		PRNumber: 12,
+		PRRepo:   "org/repo",
+		PRTitle:  "Fix the login bug",
+	})
+	want := "Review: Fix the login bug"
+	if m.taskInput.Value() != want {
+		t.Fatalf("expected task=%q, got %q", want, m.taskInput.Value())
+	}
+}
+
+func TestNucleusModal_Open_PRTitle_Empty_FallsBackToNumber(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:     ModeReview,
+		PRNumber: 42,
+		PRRepo:   "org/repo",
+		PRTitle:  "",
+	})
+	want := "Review PR #42"
+	if m.taskInput.Value() != want {
+		t.Fatalf("expected task=%q, got %q", want, m.taskInput.Value())
+	}
+}
+
 func TestNucleusModal_Open_ResetsError(t *testing.T) {
 	m := NewNucleusModal(80)
 	m.err = "previous error"
@@ -120,6 +148,30 @@ func TestNucleusModal_SetRepos_ClampsCursor(t *testing.T) {
 	m = m.SetRepos([]string{"/only"})
 	if m.repoCursor != 0 {
 		t.Fatalf("expected cursor clamped to 0, got %d", m.repoCursor)
+	}
+}
+
+func TestNucleusModal_SetRepos_AutoSelectsMatchingPRRepo(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:   ModeReview,
+		PRRepo: "org/beta",
+	})
+	m = m.SetRepos([]string{"/home/user/alpha", "/home/user/beta", "/home/user/gamma"})
+	if m.repoCursor != 1 {
+		t.Fatalf("expected repoCursor=1 (beta), got %d", m.repoCursor)
+	}
+}
+
+func TestNucleusModal_SetRepos_NoMatchLeavesFirstSelected(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:   ModeReview,
+		PRRepo: "org/unknown",
+	})
+	m = m.SetRepos([]string{"/home/user/alpha", "/home/user/beta"})
+	if m.repoCursor != 0 {
+		t.Fatalf("expected repoCursor=0 when no match, got %d", m.repoCursor)
 	}
 }
 
@@ -469,13 +521,67 @@ func TestNucleusModal_Submit_ReviewMode_NoBranch_SetsErr(t *testing.T) {
 	m := NewNucleusModal(80)
 	m, _ = m.Open(NucleusModalContext{Mode: ModeReview})
 	m.taskInput.SetValue("review task")
-	// no branches loaded → filtered list is empty
+	// no branches loaded and no filter → filtered list is empty
 	m, req, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if req.Submit != nil {
 		t.Fatal("expected no Submit when no branch selected in review mode")
 	}
 	if m.err == "" {
 		t.Fatal("expected error message when no branch selected")
+	}
+}
+
+func TestNucleusModal_Open_ReviewMode_WorktreeDefaultsOff(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:     ModeReview,
+		PRNumber: 5,
+		PRRepo:   "org/repo",
+		PRBranch: "feat/thing",
+	})
+	if m.createWorktree {
+		t.Fatal("expected createWorktree=false by default for review mode")
+	}
+}
+
+func TestNucleusModal_Submit_ReviewMode_UsesBranchFilterWhenBranchesNotLoaded(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:     ModeReview,
+		PRNumber: 3,
+		PRRepo:   "org/repo",
+		PRBranch: "feat/oauth",
+	})
+	m.taskInput.SetValue("Review: Add OAuth")
+	// branches not yet loaded (branchesReady=false, branchList=nil)
+
+	_, req, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if req.Submit == nil {
+		t.Fatal("expected Submit even when branches haven't loaded")
+	}
+	if req.Submit.Branch != "feat/oauth" {
+		t.Fatalf("expected branch='feat/oauth', got %q", req.Submit.Branch)
+	}
+}
+
+func TestNucleusModal_Submit_ReviewMode_PrefersFilteredListOverRawFilter(t *testing.T) {
+	m := NewNucleusModal(80)
+	m, _ = m.Open(NucleusModalContext{
+		Mode:     ModeReview,
+		PRNumber: 3,
+		PRRepo:   "org/repo",
+		PRBranch: "feat/oauth",
+	})
+	m.taskInput.SetValue("Review: Add OAuth")
+	m = m.SetBranches([]string{"feat/oauth", "feat/oauth-v2", "main"})
+	// cursor at 0 → "feat/oauth" (exact match first in filtered list)
+
+	_, req, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if req.Submit == nil {
+		t.Fatal("expected Submit with branches loaded")
+	}
+	if req.Submit.Branch != "feat/oauth" {
+		t.Fatalf("expected branch='feat/oauth', got %q", req.Submit.Branch)
 	}
 }
 

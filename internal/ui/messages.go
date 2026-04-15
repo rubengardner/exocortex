@@ -100,3 +100,18 @@ type githubPRMetaLoadedMsg struct {
 	detail *github.PRDetail
 	err    error
 }
+
+// githubFilterConfirmedMsg is emitted when the user presses enter in the
+// GitHub filter modal, committing the draft filter.
+type githubFilterConfirmedMsg struct {
+	filter github.PRFilter
+}
+
+// githubFilterConfigLoadedMsg carries the static data needed to populate
+// the filter modal (loaded once per modal open from LoadGitHubFilterConfig).
+type githubFilterConfigLoadedMsg struct {
+	myLogin   string
+	teammates []string
+	repoNames []string
+	err       error
+}
