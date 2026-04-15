@@ -29,7 +29,8 @@ type Services struct {
 	// LoadJiraIssueMeta fetches lightweight issue metadata for the Nucleus detail panel; nil disables it.
 	LoadJiraIssueMeta func(key string) (*jira.Issue, error)
 	CapturePane       func(tmuxTarget string) (string, error) // nil disables live preview
-	CreateNucleus     func(task, repo, branch, profile, jiraKey string) error
+	// CreateNucleus creates a new development nucleus. createWorktree=false skips git worktree creation.
+	CreateNucleus func(task, repo, branch, profile, jiraKey string, createWorktree bool) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
@@ -45,8 +46,9 @@ type Services struct {
 	// ListBranches returns local branch names for a repo; used in the review workflow.
 	ListBranches func(repoPath string) ([]string, error)
 	// CreateReviewNucleus creates a nucleus on an existing branch for PR review.
-	// nil disables the R key in the GitHub views.
-	CreateReviewNucleus func(task, repo, branch, profile string, prNumber int, prRepo string) error
+	// createWorktree=false skips git worktree creation.
+	// nil disables the review workflow.
+	CreateReviewNucleus func(task, repo, branch, profile string, prNumber int, prRepo string, createWorktree bool) error
 	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
 	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
 	OpenNvimFile func(nucleusID, filePath string, line int) error
@@ -67,25 +69,12 @@ type Model struct {
 	width  int
 	height int
 
-	// new-nucleus form
-	formTask    textinput.Model
-	formBranch  textinput.Model
-	formFocused int // 0=task, 1=branch
-	formErr     string
+	// unified nucleus-creation modal
+	nucleusModal NucleusModal
+	prevState    viewState // state to restore when modal is cancelled
 
 	// confirm-delete
 	confirmID string
-
-	// repo picker state
-	repos        []string
-	repoCursor   int
-	selectedRepo string // set when user picks a repo, or "." when no picker
-
-	// profile picker state
-	profileNames    []string          // sorted display names
-	profilePaths    map[string]string // name → CLAUDE_CONFIG_DIR path
-	profileCursor   int
-	selectedProfile string // profile name chosen by user, or "" when no picker
 
 	// live pane preview
 	previewEnabled bool   // global toggle; default true
@@ -108,10 +97,6 @@ type Model struct {
 	jiraDetailURL     string // web URL for "open in browser" (from issue.URL)
 	jiraDetailScroll  int    // top visible line index
 	jiraDetailLoading bool
-
-	// Jira context for nucleus creation (set when N is pressed on the board).
-	pendingJiraKey     string // issue key, e.g. "PROJ-42"; "" = no Jira context
-	pendingJiraSummary string // issue summary for pre-filling the task field
 
 	// Jira metadata for the nucleus detail middle panel.
 	detailJiraIssue   *jira.Issue // nil until loaded (or if no JiraKey)
@@ -150,33 +135,12 @@ type Model struct {
 	githubDetailFileCursor int    // selected file index within d.Files
 	githubFileExpanded     []bool // per-file accordion expansion state
 
-	// review workflow state
-	formMode       string // "" (adhoc) or "review"
-	reviewPRNumber int
-	reviewPRRepo   string
-	reviewPRBranch string // head branch of the PR being reviewed
-
-	// branch search state (StateBranchSearch)
-	branchSearchBranches []string
-	branchSearchFilter   string
-	branchSearchCursor   int
-	branchSearchLoading  bool
-
 	// transient status bar message
 	lastErr string
 }
 
 // New returns an initialised Model.
 func New(svc Services) Model {
-	task := textinput.New()
-	task.Placeholder = "describe the task…"
-	task.CharLimit = 120
-	task.Focus()
-
-	branch := textinput.New()
-	branch.Placeholder = "branch name (optional, auto-generated if blank)"
-	branch.CharLimit = 80
-
 	h := help.New()
 	h.ShowAll = false
 
@@ -184,8 +148,7 @@ func New(svc Services) Model {
 		services:       svc,
 		keys:           DefaultKeys(),
 		help:           h,
-		formTask:       task,
-		formBranch:     branch,
+		nucleusModal:   NewNucleusModal(80),
 		previewEnabled: true,
 	}
 }
@@ -217,6 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.Width = msg.Width
+		m.nucleusModal.width = msg.Width
 		return m, nil
 
 	case nucleiLoadedMsg:
@@ -238,41 +202,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reposLoadedMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
-			m.state = stateList
-		} else {
-			m.repos = msg.repos
-			if len(m.repos) == 0 {
-				// Config present but no repos listed — skip picker.
-				m.selectedRepo = "."
-				return m.transitionAfterRepo()
+			if m.state == stateNucleusModal {
+				m.state = m.prevState
 			}
+		} else {
+			repos := msg.repos
+			if len(repos) == 0 {
+				repos = []string{"."}
+			}
+			m.nucleusModal = m.nucleusModal.SetRepos(repos)
 		}
 		return m, nil
 
 	case profilesLoadedMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
-			m.state = stateList
 		} else {
-			m.profileNames = msg.names
-			m.profilePaths = msg.paths
-			if len(m.profileNames) == 0 {
-				// No profiles configured — skip picker.
-				m.selectedProfile = ""
-				return m.transitionToFormDest()
-			}
-			m.state = stateProfileSelect
+			m.nucleusModal = m.nucleusModal.SetProfiles(msg.names, msg.paths)
 		}
 		return m, nil
 
 	case branchesLoadedMsg:
-		m.branchSearchLoading = false
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
-			m.state = stateList
 		} else {
-			m.branchSearchBranches = msg.branches
-			m.branchSearchCursor = 0
+			m.nucleusModal = m.nucleusModal.SetBranches(msg.branches)
 		}
 		return m, nil
 
@@ -399,14 +353,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case stateList:
 			return m.updateNucleusList(msg)
-		case stateNewOverlay:
-			return m.updateNucleusForm(msg)
+		case stateNucleusModal:
+			return m.updateNucleusModal(msg)
 		case stateConfirmDelete:
 			return m.updateConfirm(msg)
-		case stateRepoSelect:
-			return m.updateRepoSelect(msg)
-		case stateProfileSelect:
-			return m.updateProfileSelect(msg)
 		case stateJiraBoard:
 			return m.updateJiraBoard(msg)
 		case stateJiraDetail:
@@ -419,8 +369,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateGitHubView(msg)
 		case stateGitHubPRDetail:
 			return m.updateGitHubPRDetail(msg)
-		case stateBranchSearch:
-			return m.updateBranchSearch(msg)
 		case stateHelp:
 			// Any key dismisses help.
 			m.state = stateList
@@ -455,19 +403,83 @@ func (m Model) View() string {
 	default:
 		base := m.viewMain()
 		switch m.state {
-		case stateNewOverlay:
-			return m.renderOverlay(base, m.viewNewForm())
+		case stateNucleusModal:
+			return m.renderOverlay(base, m.nucleusModal.View())
 		case stateConfirmDelete:
 			return m.renderOverlay(base, m.viewConfirm())
-		case stateRepoSelect:
-			return m.renderOverlay(base, m.viewRepoSelect())
-		case stateProfileSelect:
-			return m.renderOverlay(base, m.viewProfileSelect())
-		case stateBranchSearch:
-			return m.renderOverlay(base, m.viewBranchSearch())
 		}
 		return base
 	}
+}
+
+// updateNucleusModal routes key events into the unified modal and acts on the
+// resulting ModalRequest.
+func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	modal, req, cmd := m.nucleusModal.Update(msg)
+	m.nucleusModal = modal
+
+	if req.Cancel {
+		m.state = m.prevState
+		return m, nil
+	}
+
+	if req.LoadBranches {
+		return m, tea.Batch(cmd, m.loadBranchesForModalCmd())
+	}
+
+	if req.Submit != nil {
+		sub := req.Submit
+		m.state = stateList
+		if sub.Mode == ModeReview {
+			svc := m.services.CreateReviewNucleus
+			if svc == nil {
+				m.lastErr = "review nucleus creation not configured"
+				m.state = m.prevState
+				return m, cmd
+			}
+			return m, tea.Batch(cmd, func() tea.Msg {
+				return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.PRNumber, sub.PRRepo, sub.CreateWorktree)}
+			})
+		}
+		svc := m.services.CreateNucleus
+		return m, tea.Batch(cmd, func() tea.Msg {
+			return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.JiraKey, sub.CreateWorktree)}
+		})
+	}
+
+	return m, cmd
+}
+
+// openNucleusModal transitions to stateNucleusModal, saves the current state
+// so it can be restored on cancel, and fires async data loads.
+func (m Model) openNucleusModal(ctx NucleusModalContext) (Model, tea.Cmd) {
+	m.prevState = m.state
+
+	modal, initCmd := m.nucleusModal.Open(ctx)
+	m.nucleusModal = modal
+	m.state = stateNucleusModal
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, initCmd)
+
+	if m.services.LoadRepos != nil {
+		cmds = append(cmds, m.loadReposCmd())
+	} else {
+		m.nucleusModal = m.nucleusModal.SetRepos([]string{"."})
+	}
+
+	if m.services.LoadProfiles != nil {
+		cmds = append(cmds, m.loadProfilesCmd())
+	} else {
+		m.nucleusModal = m.nucleusModal.SetProfiles(nil, nil)
+	}
+
+	// For review mode, load branches immediately (repo is already known as ".").
+	if ctx.Mode == ModeReview && m.services.LoadRepos == nil {
+		cmds = append(cmds, m.loadBranchesForModalCmd())
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) viewMain() string {
@@ -574,16 +586,48 @@ func (m Model) loadBranchInfoCmd() tea.Cmd {
 	}
 }
 
-// loadBranchesCmd fires an async fetch of local branches for the selected repo.
-func (m Model) loadBranchesCmd() tea.Cmd {
-	if m.services.ListBranches == nil || m.selectedRepo == "" {
+// loadBranchesForModalCmd fires an async fetch of local branches for the repo
+// currently selected in the modal.
+func (m Model) loadBranchesForModalCmd() tea.Cmd {
+	repo := m.nucleusModal.SelectedRepo()
+	if m.services.ListBranches == nil || repo == "" {
 		return func() tea.Msg { return branchesLoadedMsg{branches: []string{}} }
 	}
 	svc := m.services.ListBranches
-	repo := m.selectedRepo
 	return func() tea.Msg {
 		branches, err := svc(repo)
 		return branchesLoadedMsg{branches: branches, err: err}
+	}
+}
+
+// loadReposCmd fires an async repo-list fetch.
+func (m Model) loadReposCmd() tea.Cmd {
+	svc := m.services.LoadRepos
+	return func() tea.Msg {
+		repos, err := svc()
+		return reposLoadedMsg{repos: repos, err: err}
+	}
+}
+
+// loadProfilesCmd fires an async profile-list fetch.
+func (m Model) loadProfilesCmd() tea.Cmd {
+	svc := m.services.LoadProfiles
+	return func() tea.Msg {
+		paths, err := svc()
+		if err != nil {
+			return profilesLoadedMsg{err: err}
+		}
+		names := make([]string, 0, len(paths))
+		for name := range paths {
+			names = append(names, name)
+		}
+		// Sort for stable display order.
+		for i := 1; i < len(names); i++ {
+			for j := i; j > 0 && names[j] < names[j-1]; j-- {
+				names[j], names[j-1] = names[j-1], names[j]
+			}
+		}
+		return profilesLoadedMsg{names: names, paths: paths}
 	}
 }
 
@@ -624,8 +668,7 @@ func (m Model) loadGitHubPRPreviewCmd(repo string, number int) tea.Cmd {
 }
 
 // loadGitHubPRMetaCmd fires an async fetch of PR metadata for the nucleus
-// detail panel. It is a no-op when the current nucleus has no PRNumber or when
-// the LoadGitHubPR service is not configured.
+// detail panel.
 func (m Model) loadGitHubPRMetaCmd() tea.Cmd {
 	if m.services.LoadGitHubPR == nil || len(m.nuclei) == 0 {
 		return nil
@@ -644,8 +687,7 @@ func (m Model) loadGitHubPRMetaCmd() tea.Cmd {
 }
 
 // loadJiraIssueMetaCmd fires an async fetch of issue metadata for the nucleus
-// detail panel. It is a no-op when the current nucleus has no JiraKey or when
-// the LoadJiraIssueMeta service is not configured.
+// detail panel.
 func (m Model) loadJiraIssueMetaCmd() tea.Cmd {
 	if m.services.LoadJiraIssueMeta == nil || len(m.nuclei) == 0 {
 		return nil
@@ -659,20 +701,6 @@ func (m Model) loadJiraIssueMetaCmd() tea.Cmd {
 		issue, err := svc(key)
 		return jiraIssueMetaLoadedMsg{issue: issue, err: err}
 	}
-}
-
-// openNucleusForm transitions to the new-nucleus form overlay. When a pending
-// Jira key is set, the task and branch fields are pre-filled from the linked
-// issue so the user can confirm or edit before submitting.
-func (m Model) openNucleusForm() (Model, tea.Cmd) {
-	if m.pendingJiraKey != "" {
-		m.formTask.SetValue(m.pendingJiraSummary)
-		m.formTask.CursorEnd()
-		m.formBranch.SetValue("task/" + m.pendingJiraKey + "/")
-		m.formBranch.CursorEnd()
-	}
-	m.state = stateNewOverlay
-	return m, textinput.Blink
 }
 
 // matchKey returns true if the tea.KeyMsg matches the given binding.
@@ -733,3 +761,6 @@ func fmtAge(t time.Time) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
+
+// textinput is imported only for the Blink command used in openNucleusModal.
+var _ = textinput.Blink

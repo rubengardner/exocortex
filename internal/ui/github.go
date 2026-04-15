@@ -75,7 +75,15 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		pr := m.githubPRs[m.githubPRCursor]
-		return m.startReviewWorkflow(pr.Number, pr.Repo, pr.Branch)
+		return m.openNucleusModal(NucleusModalContext{
+			Mode:     ModeReview,
+			PRNumber: pr.Number,
+			PRRepo:   pr.Repo,
+			PRBranch: pr.Branch,
+		})
+
+	case matchKey(msg, m.keys.New):
+		return m.openNucleusModal(NucleusModalContext{})
 	}
 	return m, nil
 }
@@ -139,7 +147,15 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		d := m.githubDetailPR
-		return m.startReviewWorkflow(d.Number, d.Repo, d.Branch)
+		return m.openNucleusModal(NucleusModalContext{
+			Mode:     ModeReview,
+			PRNumber: d.Number,
+			PRRepo:   d.Repo,
+			PRBranch: d.Branch,
+		})
+
+	case matchKey(msg, m.keys.New):
+		return m.openNucleusModal(NucleusModalContext{})
 
 	case matchKey(msg, m.keys.Nvim):
 		if m.githubDetailPR == nil || m.services.OpenNvimFile == nil {

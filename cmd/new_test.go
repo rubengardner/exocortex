@@ -104,7 +104,7 @@ func TestRunNew_SavesNucleus(t *testing.T) {
 	tm := &fakeTmux{target: "main:1.0"}
 
 	out := &strings.Builder{}
-	err := executeNew("Fix auth bug", ".", "", "", "", reg, gt, tm, out)
+	err := executeNew("Fix auth bug", ".", "", "", "", true, reg, gt, tm, out)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestRunNew_CreatesWorktree(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if !gt.addCalled {
 		t.Fatal("expected git.AddWorktree to be called")
 	}
@@ -142,7 +142,7 @@ func TestRunNew_AutoGeneratesBranch(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if reg.added == nil {
 		t.Fatal("nothing saved")
 	}
@@ -156,7 +156,7 @@ func TestRunNew_UsesBranchFlag(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "my-explicit-branch", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "my-explicit-branch", "", "", true, reg, gt, tm, &strings.Builder{})
 	if reg.added.Branch != "my-explicit-branch" {
 		t.Fatalf("expected explicit branch, got %s", reg.added.Branch)
 	}
@@ -168,7 +168,7 @@ func TestRunNew_PrintsID(t *testing.T) {
 	tm := &fakeTmux{target: "main:1.0"}
 	out := &strings.Builder{}
 
-	_ = executeNew("my task", ".", "", "", "", reg, gt, tm, out)
+	_ = executeNew("my task", ".", "", "", "", true, reg, gt, tm, out)
 	if !strings.Contains(out.String(), reg.added.ID) {
 		t.Fatalf("output should contain nucleus ID, got: %s", out.String())
 	}
@@ -179,7 +179,7 @@ func TestRunNew_GitError_Propagates(t *testing.T) {
 	gt := &fakeGit{addErr: errors.New("git exploded")}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	err := executeNew("task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	err := executeNew("task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if err == nil {
 		t.Fatal("expected error from git")
 	}
@@ -190,7 +190,7 @@ func TestRunNew_TmuxError_Propagates(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{splitErr: errors.New("no session")}
 
-	err := executeNew("task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	err := executeNew("task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if err == nil {
 		t.Fatal("expected error from tmux")
 	}
@@ -201,7 +201,7 @@ func TestRunNew_ExistingBranch_DoesNotCreateBranch(t *testing.T) {
 	gt := &fakeGit{branchExists: true}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "existing-branch", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "existing-branch", "", "", true, reg, gt, tm, &strings.Builder{})
 	if gt.createBranch {
 		t.Fatal("should not create branch when it already exists")
 	}
@@ -212,7 +212,7 @@ func TestRunNew_NewBranch_CreatesBranch(t *testing.T) {
 	gt := &fakeGit{branchExists: false}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if !gt.createBranch {
 		t.Fatal("should create branch when it does not exist")
 	}
@@ -227,7 +227,7 @@ func TestRunNew_SendsClaudeKeys(t *testing.T) {
 		sentKeys = keys
 	}}
 
-	err := executeNew("my task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	err := executeNew("my task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestRunNew_HasClaudeNeuron(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeNew("my task", ".", "", "", "", reg, gt, tm, &strings.Builder{})
+	_ = executeNew("my task", ".", "", "", "", true, reg, gt, tm, &strings.Builder{})
 	if reg.added == nil {
 		t.Fatal("nothing saved")
 	}
@@ -321,7 +321,7 @@ func TestExecuteReview_SavesNucleusWithPRLinkage(t *testing.T) {
 	tm := &fakeTmux{target: "main:1.0"}
 	out := &strings.Builder{}
 
-	err := executeReview("Review PR #42", ".", "feat/oauth", "", 42, "owner/repo", reg, gt, tm, out)
+	err := executeReview("Review PR #42", ".", "feat/oauth", "", 42, "owner/repo", true, reg, gt, tm, out)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestExecuteReview_DoesNotCreateBranch(t *testing.T) {
 	gt := &fakeGit{}
 	tm := &fakeTmux{target: "main:1.0"}
 
-	_ = executeReview("Review PR #7", ".", "existing-branch", "", 7, "org/repo", reg, gt, tm, &strings.Builder{})
+	_ = executeReview("Review PR #7", ".", "existing-branch", "", 7, "org/repo", true, reg, gt, tm, &strings.Builder{})
 	if gt.createBranch {
 		t.Fatal("review workflow must not create a new branch")
 	}
@@ -355,7 +355,7 @@ func TestExecuteReview_GitError_Propagates(t *testing.T) {
 	gt := &fakeGit{addErr: errors.New("checkout failed")}
 	tm := &fakeTmux{}
 
-	err := executeReview("Review PR #1", ".", "feat/foo", "", 1, "org/repo", reg, gt, tm, &strings.Builder{})
+	err := executeReview("Review PR #1", ".", "feat/foo", "", 1, "org/repo", true, reg, gt, tm, &strings.Builder{})
 	if err == nil {
 		t.Fatal("expected error from git")
 	}
