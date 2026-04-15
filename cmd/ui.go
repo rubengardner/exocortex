@@ -186,7 +186,7 @@ func buildServices() ui.Services {
 			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)
 		},
 		BrowserOpen: func(url string) error {
-			return exec.Command("xdg-open", url).Start()
+			return exec.Command("open", url).Start()
 		},
 	}
 }

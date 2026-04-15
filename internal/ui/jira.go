@@ -59,6 +59,25 @@ func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.jiraDetailLoading = true
 		return m, m.loadJiraIssueCmd(issue.Key, issue.Summary)
 
+	case matchKey(msg, m.keys.OpenBrowser):
+		if m.services.BrowserOpen == nil || len(m.jiraColumns) == 0 {
+			break
+		}
+		col := m.jiraColumns[m.jiraColIdx]
+		issues := m.jiraIssues[col]
+		if m.jiraRowIdx >= len(issues) {
+			break
+		}
+		url := issues[m.jiraRowIdx].URL
+		if url == "" {
+			break
+		}
+		svc := m.services.BrowserOpen
+		return m, func() tea.Msg {
+			_ = svc(url)
+			return nil
+		}
+
 	case msg.String() == "N":
 		// Create a Nucleus from the selected Jira issue: pre-fill the form
 		// with the issue summary (task) and a branch prefix of task/<key>/.
@@ -249,7 +268,7 @@ func (m Model) viewJiraBoardStatusBar() string {
 	if m.jiraLoading {
 		return StyleHelp.Render("  refreshing…")
 	}
-	hint := "  b/esc back   j/k row   h/l column   space detail   N new nucleus   r refresh"
+	hint := "  b/esc back   j/k row   h/l column   space detail   o browser   N new nucleus   r refresh"
 	if !m.jiraLastRefresh.IsZero() {
 		return StyleHelp.Render(fmt.Sprintf("  updated %s ·%s", fmtAge(m.jiraLastRefresh), hint))
 	}
