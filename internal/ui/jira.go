@@ -78,8 +78,8 @@ func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return nil
 		}
 
-	case msg.String() == "N":
-		// Create a Nucleus from the selected Jira issue: pre-fill the form
+	case msg.String() == "N", matchKey(msg, m.keys.New):
+		// Create a Nucleus from the selected Jira issue: pre-fill the modal
 		// with the issue summary (task) and a branch prefix of task/<key>/.
 		if len(m.jiraColumns) == 0 {
 			break
@@ -90,22 +90,10 @@ func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		issue := issues[m.jiraRowIdx]
-		m.pendingJiraKey = issue.Key
-		m.pendingJiraSummary = issue.Summary
-		m.formTask.Reset()
-		m.formBranch.Reset()
-		m.formTask.Focus()
-		m.formBranch.Blur()
-		m.formFocused = 0
-		m.formErr = ""
-		if m.services.LoadRepos != nil {
-			m.repos = nil
-			m.repoCursor = 0
-			m.state = stateRepoSelect
-			return m, m.loadReposCmd()
-		}
-		m.selectedRepo = "."
-		return m.transitionAfterRepo()
+		return m.openNucleusModal(NucleusModalContext{
+			JiraKey:     issue.Key,
+			JiraSummary: issue.Summary,
+		})
 	}
 	return m.jiraAdjustScroll(), nil
 }
@@ -147,6 +135,9 @@ func (m Model) updateJiraDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = svc(url)
 			return nil
 		}
+
+	case matchKey(msg, m.keys.New):
+		return m.openNucleusModal(NucleusModalContext{})
 	}
 	return m, nil
 }

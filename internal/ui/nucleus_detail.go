@@ -83,6 +83,9 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return actionDoneMsg{err: svc(id)}
 		}
 
+	case matchKey(msg, m.keys.New):
+		return m.openNucleusModal(NucleusModalContext{})
+
 	case matchKey(msg, m.keys.Refresh):
 		m.branchModified = nil
 		m.branchAheadCommits = nil

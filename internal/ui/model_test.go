@@ -16,7 +16,7 @@ import (
 func newTestModel(nuclei []registry.Nucleus) ui.Model {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -33,7 +33,7 @@ func newTestModel(nuclei []registry.Nucleus) ui.Model {
 func nucleiLoaded(nuclei []registry.Nucleus) tea.Msg {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -51,6 +51,27 @@ func press(m tea.Model, key string) (tea.Model, tea.Cmd) {
 
 func pressSpecial(m tea.Model, t tea.KeyType) (tea.Model, tea.Cmd) {
 	return m.Update(tea.KeyMsg{Type: t})
+}
+
+// drainCmd executes cmd and feeds resulting messages back into the model,
+// handling tea.BatchMsg by processing each sub-command recursively.
+// Use this in tests to simulate what the Bubble Tea runtime does automatically.
+func drainCmd(m tea.Model, cmd tea.Cmd) tea.Model {
+	if cmd == nil {
+		return m
+	}
+	msg := cmd()
+	if msg == nil {
+		return m
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, subCmd := range batch {
+			m = drainCmd(m, subCmd)
+		}
+		return m
+	}
+	m2, _ := m.Update(msg)
+	return m2
 }
 
 func sampleNuclei() []registry.Nucleus {
@@ -129,7 +150,7 @@ func TestNvim_CallsOpenNvim(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { calledID = id; return nil },
@@ -153,7 +174,7 @@ func TestNvimError_SetsLastErr(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return errors.New("nvim gone") },
@@ -217,7 +238,7 @@ func TestDelete_ConfirmCallsRemove(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus:  func(id string) error { removed = id; return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -258,7 +279,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 	rec := &reviewRecord{}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string) error { return nil },
+		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -266,7 +287,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 		ListBranches: func(_ string) ([]string, error) {
 			return []string{"main", pr.branch}, nil
 		},
-		CreateReviewNucleus: func(task, repo, branch, profile string, prNumber int, prRepo string) error {
+		CreateReviewNucleus: func(task, repo, branch, profile string, prNumber int, prRepo string, createWorktree bool) error {
 			rec.branch = branch
 			rec.prNumber = prNumber
 			rec.prRepo = prRepo
@@ -333,10 +354,10 @@ func TestReview_BranchSearchEscReturnsToList(t *testing.T) {
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
 
 	m4 := enterGitHubViewWithPRs(m3)
-	m5, _ := press(m4, "R") // → StateBranchSearch
+	m5, _ := press(m4, "R") // → StateNucleusModal (prevState = StateGitHubView)
 	m6, _ := pressSpecial(m5, tea.KeyEsc)
-	if m6.(ui.Model).State() != ui.StateList {
-		t.Fatalf("expected StateList after esc, got %v", m6.(ui.Model).State())
+	if m6.(ui.Model).State() != ui.StateGitHubView {
+		t.Fatalf("expected StateGitHubView after esc from modal, got %v", m6.(ui.Model).State())
 	}
 }
 
@@ -348,23 +369,17 @@ func TestReview_BranchSearchEnterCallsCreateReviewNucleus(t *testing.T) {
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
 
 	m4 := enterGitHubViewWithPRs(m3)
-	m5, branchCmd := press(m4, "R") // → StateBranchSearch + loadBranchesCmd
-	if branchCmd != nil {
-		// Drive the async branch load.
-		branchMsg := branchCmd()
-		m5, _ = m5.Update(branchMsg)
-	}
+	m5, branchCmd := press(m4, "R") // → StateNucleusModal + BatchMsg
+	// Drain the BatchMsg: fires textinput.Blink + loads branches into the modal.
+	m5 = drainCmd(m5, branchCmd)
 
-	// Enter selects the first (filtered) branch, fires CreateReviewNucleus cmd.
+	// Enter submits the pre-filled form and fires CreateReviewNucleus.
 	m6, cmd := pressSpecial(m5, tea.KeyEnter)
-	_ = m6
 	if cmd == nil {
-		t.Fatal("expected cmd after enter in branch search")
+		t.Fatal("expected cmd after enter in nucleus modal")
 	}
-	msg := cmd()
-	if msg == nil {
-		t.Fatal("cmd returned nil msg")
-	}
+	// Execute the cmd chain — this calls CreateReviewNucleus and populates rec.
+	drainCmd(m6, cmd)
 
 	if rec.prNumber != 7 {
 		t.Fatalf("expected prNumber=7, got %d", rec.prNumber)

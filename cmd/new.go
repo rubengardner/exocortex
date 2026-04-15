@@ -36,13 +36,15 @@ func runNew(cmd *cobra.Command, args []string) error {
 	reg := &registryAdapter{path: registry.DefaultPath()}
 	gt := igit.New(igit.ExecRunner{})
 	tm := itmux.New(itmux.ExecRunner{})
-	return executeNew(newTask, newRepo, newBranch, "", "", reg, gt, tm, cmd.OutOrStdout())
+	return executeNew(newTask, newRepo, newBranch, "", "", true, reg, gt, tm, cmd.OutOrStdout())
 }
 
 // executeNew creates a new nucleus with a single Claude neuron. claudeConfigDir,
 // when non-empty, is passed as CLAUDE_CONFIG_DIR when launching Claude Code.
 // jiraKey, when non-empty, is stored on the Nucleus for Jira linkage.
-func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+// When createWorktree is false the nucleus is opened directly in the repo
+// directory without creating an isolated git worktree.
+func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWorktree bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
 	repoPath, err := filepath.Abs(repoArg)
 	if err != nil {
 		return fmt.Errorf("resolve repo path: %w", err)
@@ -59,26 +61,35 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, reg nucl
 		branch = "agent/" + id
 	}
 
-	worktreePath := filepath.Join(repoPath, ".worktrees", id)
+	windowDir := repoPath
+	var worktreePath string
 
-	exists, err := gt.BranchExists(repoPath, branch)
+	if createWorktree {
+		worktreePath = filepath.Join(repoPath, ".worktrees", id)
+
+		exists, err := gt.BranchExists(repoPath, branch)
+		if err != nil {
+			return fmt.Errorf("check branch: %w", err)
+		}
+		createBranch := !exists
+
+		if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch); err != nil {
+			return fmt.Errorf("git worktree add: %w", err)
+		}
+
+		// Write Claude Code hooks — warn on failure, do not abort.
+		if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
+			fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
+		}
+
+		windowDir = worktreePath
+	}
+
+	target, err := tm.NewWindow(windowDir, task)
 	if err != nil {
-		return fmt.Errorf("check branch: %w", err)
-	}
-	createBranch := !exists
-
-	if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch); err != nil {
-		return fmt.Errorf("git worktree add: %w", err)
-	}
-
-	// Write Claude Code hooks — warn on failure, do not abort.
-	if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
-		fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
-	}
-
-	target, err := tm.NewWindow(worktreePath, task)
-	if err != nil {
-		_ = gt.RemoveWorktree(repoPath, worktreePath)
+		if createWorktree && worktreePath != "" {
+			_ = gt.RemoveWorktree(repoPath, worktreePath)
+		}
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
 
@@ -120,7 +131,9 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, reg nucl
 
 // executeReview creates a Nucleus on an existing branch for PR review.
 // Unlike executeNew, it checks out an existing branch without -b.
-func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, prRepo string, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+// When createWorktree is false the nucleus opens in the repo root without
+// creating an isolated worktree.
+func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, prRepo string, createWorktree bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
 	repoPath, err := filepath.Abs(repoArg)
 	if err != nil {
 		return fmt.Errorf("resolve repo path: %w", err)
@@ -132,21 +145,31 @@ func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, 
 	}
 
 	id := uniqueID(task, existing.Nuclei)
-	worktreePath := filepath.Join(repoPath, ".worktrees", id)
 
-	// Check out existing branch — no -b flag.
-	if err := gt.AddWorktree(repoPath, worktreePath, branch, false); err != nil {
-		return fmt.Errorf("git worktree add: %w", err)
+	windowDir := repoPath
+	var worktreePath string
+
+	if createWorktree {
+		worktreePath = filepath.Join(repoPath, ".worktrees", id)
+
+		// Check out existing branch — no -b flag.
+		if err := gt.AddWorktree(repoPath, worktreePath, branch, false); err != nil {
+			return fmt.Errorf("git worktree add: %w", err)
+		}
+
+		// Write Claude Code hooks — warn on failure, do not abort.
+		if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
+			fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
+		}
+
+		windowDir = worktreePath
 	}
 
-	// Write Claude Code hooks — warn on failure, do not abort.
-	if err := hooks.Write(worktreePath, id, ".claude-work"); err != nil {
-		fmt.Fprintf(out, "warning: could not write Claude Code hooks: %v\n", err)
-	}
-
-	target, err := tm.NewWindow(worktreePath, task)
+	target, err := tm.NewWindow(windowDir, task)
 	if err != nil {
-		_ = gt.RemoveWorktree(repoPath, worktreePath)
+		if createWorktree && worktreePath != "" {
+			_ = gt.RemoveWorktree(repoPath, worktreePath)
+		}
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
 

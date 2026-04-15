@@ -60,7 +60,7 @@ func buildServices() ui.Services {
 			}
 			return r.Nuclei, nil
 		},
-		CreateNucleus: func(task, repo, branch, profileName, jiraKey string) error {
+		CreateNucleus: func(task, repo, branch, profileName, jiraKey string, createWorktree bool) error {
 			claudeConfigDir := ""
 			if profileName != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -68,7 +68,7 @@ func buildServices() ui.Services {
 					claudeConfigDir = cfg.Profiles[profileName]
 				}
 			}
-			return executeNew(task, repo, branch, claudeConfigDir, jiraKey, reg, gt, tm, io.Discard)
+			return executeNew(task, repo, branch, claudeConfigDir, jiraKey, createWorktree, reg, gt, tm, io.Discard)
 		},
 		RemoveNucleus: func(id string) error {
 			return executeRemove(id, reg, gt, tm)
@@ -172,7 +172,7 @@ func buildServices() ui.Services {
 		ListBranches: func(repoPath string) ([]string, error) {
 			return gt.ListBranches(repoPath)
 		},
-		CreateReviewNucleus: func(task, repo, branch, profileName string, prNumber int, prRepo string) error {
+		CreateReviewNucleus: func(task, repo, branch, profileName string, prNumber int, prRepo string, createWorktree bool) error {
 			claudeConfigDir := ""
 			if profileName != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -180,7 +180,7 @@ func buildServices() ui.Services {
 					claudeConfigDir = cfg.Profiles[profileName]
 				}
 			}
-			return executeReview(task, repo, branch, claudeConfigDir, prNumber, prRepo, reg, gt, tm, io.Discard)
+			return executeReview(task, repo, branch, claudeConfigDir, prNumber, prRepo, createWorktree, reg, gt, tm, io.Discard)
 		},
 		OpenNvimFile: func(nucleusID, filePath string, line int) error {
 			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)

@@ -37,21 +37,7 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadNucleiCmd()
 
 	case matchKey(msg, m.keys.New):
-		m.formMode = ""
-		m.formTask.Reset()
-		m.formBranch.Reset()
-		m.formTask.Focus()
-		m.formBranch.Blur()
-		m.formFocused = 0
-		m.formErr = ""
-		if m.services.LoadRepos != nil {
-			m.repos = nil
-			m.repoCursor = 0
-			m.state = stateRepoSelect
-			return m, m.loadReposCmd()
-		}
-		m.selectedRepo = "."
-		return m.transitionAfterRepo()
+		return m.openNucleusModal(NucleusModalContext{})
 
 	case matchKey(msg, m.keys.Delete):
 		if len(m.nuclei) == 0 {
