@@ -138,11 +138,17 @@ type Model struct {
 	githubLoading  bool
 	githubErr      string
 
-	// github PR detail state
+	// github PR hover preview (right panel in stateGitHubView)
+	githubPreviewPR      *github.PRDetail // nil until loaded
+	githubPreviewLoading bool
+	githubPreviewNum     int // PR number of the in-flight / last preview load
+
+	// github PR detail state (right panel in stateGitHubPRDetail)
 	githubDetailPR         *github.PRDetail
 	githubDetailScroll     int
 	githubDetailLoading    bool
-	githubDetailFileCursor int // selected file index within d.Files
+	githubDetailFileCursor int    // selected file index within d.Files
+	githubFileExpanded     []bool // per-file accordion expansion state
 
 	// review workflow state
 	formMode       string // "" (adhoc) or "review"
@@ -287,6 +293,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.githubPRCursor >= len(m.githubPRs) {
 				m.githubPRCursor = 0
 			}
+			// Kick off hover preview for the first PR.
+			if len(msg.prs) > 0 && m.services.LoadGitHubPR != nil {
+				pr := msg.prs[0]
+				m.githubPreviewNum = pr.Number
+				m.githubPreviewLoading = true
+				m.githubPreviewPR = nil
+				return m, m.loadGitHubPRPreviewCmd(pr.Repo, pr.Number)
+			}
+		}
+		return m, nil
+
+	case githubPRPreviewLoadedMsg:
+		m.githubPreviewLoading = false
+		if msg.err == nil && msg.number == m.githubPreviewNum {
+			m.githubPreviewPR = msg.detail
 		}
 		return m, nil
 
@@ -299,6 +320,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.githubDetailPR = msg.detail
 			m.githubDetailScroll = 0
 			m.githubDetailFileCursor = 0
+			m.githubFileExpanded = make([]bool, len(msg.detail.Files))
 			m.state = stateGitHubPRDetail
 		}
 		return m, nil
@@ -586,6 +608,18 @@ func (m Model) loadGitHubPRDetailCmd(repo string, number int) tea.Cmd {
 	return func() tea.Msg {
 		detail, err := svc(repo, number)
 		return githubPRDetailLoadedMsg{detail: detail, err: err}
+	}
+}
+
+// loadGitHubPRPreviewCmd fires an async fetch for the hover-preview panel.
+func (m Model) loadGitHubPRPreviewCmd(repo string, number int) tea.Cmd {
+	if m.services.LoadGitHubPR == nil {
+		return nil
+	}
+	svc := m.services.LoadGitHubPR
+	return func() tea.Msg {
+		detail, err := svc(repo, number)
+		return githubPRPreviewLoadedMsg{number: number, detail: detail, err: err}
 	}
 }
 

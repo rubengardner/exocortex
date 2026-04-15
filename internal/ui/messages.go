@@ -74,6 +74,13 @@ type githubPRDetailLoadedMsg struct {
 	err    error
 }
 
+// githubPRPreviewLoadedMsg is emitted when the hover-preview detail fetch completes.
+type githubPRPreviewLoadedMsg struct {
+	number int // PR number the result belongs to (stale-check)
+	detail *github.PRDetail
+	err    error
+}
+
 // branchesLoadedMsg is emitted when the local branch list fetch completes.
 type branchesLoadedMsg struct {
 	branches []string

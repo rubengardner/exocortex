@@ -258,7 +258,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 	rec := &reviewRecord{}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, repo, branch, profile string) error { return nil },
+		CreateNucleus: func(task, repo, branch, profile, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
