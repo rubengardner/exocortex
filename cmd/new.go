@@ -129,6 +129,24 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWo
 	return nil
 }
 
+// executeCreateNucleusOnly creates an empty Nucleus with no neurons.
+// Neurons are added later via executeAddNeuron.
+func executeCreateNucleusOnly(task, jiraKey string, reg nucleusSvc) error {
+	existing, err := reg.Load()
+	if err != nil {
+		return err
+	}
+	id := uniqueID(task, existing.Nuclei)
+	nucleus := registry.Nucleus{
+		ID:              id,
+		TaskDescription: task,
+		JiraKey:         jiraKey,
+		Status:          "idle",
+		CreatedAt:       time.Now().UTC(),
+	}
+	return reg.Add(nucleus)
+}
+
 // executeReview creates a Nucleus on an existing branch for PR review.
 // Unlike executeNew, it checks out an existing branch without -b.
 // When createWorktree is false the nucleus opens in the repo root without

@@ -21,7 +21,7 @@ func newGitHubModel(myLogin string, teammates, repos []string) ui.Model {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nil, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -62,7 +62,7 @@ func TestGitHubFilter_PressF_NoConfig_StaysOnList(t *testing.T) {
 	// When LoadGitHubFilterConfig is nil, pressing f should do nothing.
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nil, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -225,7 +225,7 @@ func TestGitHubListPanel_ShowsShortRepoName(t *testing.T) {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nil, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },

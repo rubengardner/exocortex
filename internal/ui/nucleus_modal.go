@@ -226,16 +226,19 @@ func (m NucleusModal) SelectedRepo() string {
 }
 
 // visibleFields returns the ordered list of fields shown in the modal, based on
-// how many repos and profiles are available.
+// mode and available repos/profiles. Develop mode only shows Mode + Task.
 func (m NucleusModal) visibleFields() []ModalField {
 	fields := []ModalField{ModalFieldMode}
-	if len(m.repos) > 1 {
-		fields = append(fields, ModalFieldRepo)
+	if m.mode == ModeReview {
+		if len(m.repos) > 1 {
+			fields = append(fields, ModalFieldRepo)
+		}
+		if len(m.profileNames) > 0 {
+			fields = append(fields, ModalFieldProfile)
+		}
+		fields = append(fields, ModalFieldBranch, ModalFieldWorktree)
 	}
-	if len(m.profileNames) > 0 {
-		fields = append(fields, ModalFieldProfile)
-	}
-	fields = append(fields, ModalFieldTask, ModalFieldBranch, ModalFieldWorktree)
+	fields = append(fields, ModalFieldTask)
 	return fields
 }
 
@@ -544,29 +547,31 @@ func (m NucleusModal) View() string {
 	m.renderModeField(&sb)
 	sb.WriteString("\n\n")
 
-	sb.WriteString(StyleDim.Render("── Neuron ──────────────") + "\n\n")
+	if m.mode == ModeReview {
+		sb.WriteString(StyleDim.Render("── Neuron ──────────────") + "\n\n")
 
-	if len(m.repos) > 1 {
-		m.renderRepoField(&sb)
+		if len(m.repos) > 1 {
+			m.renderRepoField(&sb)
+			sb.WriteString("\n\n")
+		}
+
+		if len(m.profileNames) > 0 {
+			m.renderProfileField(&sb)
+			sb.WriteString("\n\n")
+		}
+
+		m.renderBranchField(&sb)
 		sb.WriteString("\n\n")
-	}
 
-	if len(m.profileNames) > 0 {
-		m.renderProfileField(&sb)
+		m.renderWorktreeField(&sb)
 		sb.WriteString("\n\n")
-	}
 
-	m.renderBranchField(&sb)
-	sb.WriteString("\n\n")
+		sb.WriteString(StyleDim.Render("── Nucleus ─────────────") + "\n\n")
 
-	m.renderWorktreeField(&sb)
-	sb.WriteString("\n\n")
-
-	sb.WriteString(StyleDim.Render("── Nucleus ─────────────") + "\n\n")
-
-	if m.mode == ModeReview && m.prNumber != 0 {
-		sb.WriteString(StyleLabel.Render("PR") +
-			StyleValue.Render(fmt.Sprintf("#%d  %s", m.prNumber, m.prRepo)) + "\n\n")
+		if m.prNumber != 0 {
+			sb.WriteString(StyleLabel.Render("PR") +
+				StyleValue.Render(fmt.Sprintf("#%d  %s", m.prNumber, m.prRepo)) + "\n\n")
+		}
 	}
 
 	if m.jiraKey != "" {

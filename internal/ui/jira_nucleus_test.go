@@ -45,7 +45,7 @@ func newJiraBoardModel(t *testing.T, extraSvc func(*ui.Services)) ui.Model {
 
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nil, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -106,13 +106,15 @@ func TestJiraBoard_NKey_FormPrefillsTaskWithSummary(t *testing.T) {
 	}
 }
 
-func TestJiraBoard_NKey_FormPrefillsBranchPrefix(t *testing.T) {
+func TestJiraBoard_NKey_FormPrefillsTaskFromSummary(t *testing.T) {
+	// Branch prefix is no longer shown in develop mode (no neuron fields).
+	// Task description is pre-filled from the Jira summary.
 	m := newJiraBoardModel(t, nil)
 	m2, _ := press(m, "N")
 
 	view := m2.(ui.Model).View()
-	if !strings.Contains(view, "task/PROJ-42/") {
-		t.Fatalf("expected 'task/PROJ-42/' branch prefix in form view, got:\n%s", view)
+	if !strings.Contains(view, "Fix authentication bug") {
+		t.Fatalf("expected issue summary pre-filled in task field, got:\n%s", view)
 	}
 }
 
@@ -136,7 +138,7 @@ func TestJiraForm_Submit_PassesJiraKey(t *testing.T) {
 	var capturedJiraKey string
 
 	m := newJiraBoardModel(t, func(svc *ui.Services) {
-		svc.CreateNucleus = func(task, repo, branch, profile, jiraKey string, createWorktree bool) error {
+		svc.CreateNucleus = func(task, jiraKey string) error {
 			capturedJiraKey = jiraKey
 			return nil
 		}
@@ -165,7 +167,7 @@ func TestJiraForm_Submit_PassesEmptyKeyForAdHoc(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { capturedJiraKey = jiraKey; return nil },
+		CreateNucleus:  func(task, jiraKey string) error { capturedJiraKey = jiraKey; return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -210,7 +212,7 @@ func TestNucleusDetail_WithJiraKey_LoadsMetadata(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus:  func(task, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -262,7 +264,7 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 	metaCmd := make(chan tea.Cmd, 1)
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus:  func(task, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -309,7 +311,7 @@ func TestNucleusDetail_NoJiraKey_NoBranchInfoJiraSection(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus:  func(task, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },

@@ -29,8 +29,8 @@ type Services struct {
 	// LoadJiraIssueMeta fetches lightweight issue metadata for the Nucleus detail panel; nil disables it.
 	LoadJiraIssueMeta func(key string) (*jira.Issue, error)
 	CapturePane       func(tmuxTarget string) (string, error) // nil disables live preview
-	// CreateNucleus creates a new development nucleus. createWorktree=false skips git worktree creation.
-	CreateNucleus func(task, repo, branch, profile, jiraKey string, createWorktree bool) error
+	// CreateNucleus creates an empty nucleus (no neurons). Neurons are added later via AddNeuron.
+	CreateNucleus func(task, jiraKey string) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
@@ -497,7 +497,7 @@ func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		svc := m.services.CreateNucleus
 		return m, tea.Batch(cmd, func() tea.Msg {
-			return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.JiraKey, sub.CreateWorktree)}
+			return actionDoneMsg{err: svc(sub.Task, sub.JiraKey)}
 		})
 	}
 

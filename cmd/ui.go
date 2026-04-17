@@ -60,15 +60,8 @@ func buildServices() ui.Services {
 			}
 			return r.Nuclei, nil
 		},
-		CreateNucleus: func(task, repo, branch, profileName, jiraKey string, createWorktree bool) error {
-			claudeConfigDir := ""
-			if profileName != "" {
-				cfg, err := iconfig.Load(iconfig.DefaultPath())
-				if err == nil {
-					claudeConfigDir = cfg.Profiles[profileName]
-				}
-			}
-			return executeNew(task, repo, branch, claudeConfigDir, jiraKey, createWorktree, reg, gt, tm, io.Discard)
+		CreateNucleus: func(task, jiraKey string) error {
+			return executeCreateNucleusOnly(task, jiraKey, reg)
 		},
 		RemoveNucleus: func(id string) error {
 			return executeRemove(id, reg, gt, tm)

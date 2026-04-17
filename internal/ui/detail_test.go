@@ -13,7 +13,7 @@ func newDetailModel(addNeuronFn func(nucleusID, neuronType, repoPath, branch str
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus:  func(task, jiraKey string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -80,7 +80,7 @@ func TestNucleusDetail_NeuronCursorDown(t *testing.T) {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -120,7 +120,7 @@ func TestNucleusDetail_NeuronCursorUp(t *testing.T) {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, repo, branch, profile, jiraKey string, createWorktree bool) error { return nil },
+		CreateNucleus: func(task, jiraKey string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },

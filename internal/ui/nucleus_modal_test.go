@@ -245,8 +245,8 @@ func TestNucleusModal_SelectedRepo_FollowsCursor(t *testing.T) {
 func TestNucleusModal_VisibleFields_NoReposNoProfiles(t *testing.T) {
 	m := NewNucleusModal(80)
 	fields := m.visibleFields()
-	// Should be: Mode, Task, Branch, Worktree
-	want := []ModalField{ModalFieldMode, ModalFieldTask, ModalFieldBranch, ModalFieldWorktree}
+	// Develop mode: only Mode + Task (no neuron fields)
+	want := []ModalField{ModalFieldMode, ModalFieldTask}
 	if len(fields) != len(want) {
 		t.Fatalf("expected %d fields, got %d: %v", len(want), len(fields), fields)
 	}
@@ -258,11 +258,13 @@ func TestNucleusModal_VisibleFields_NoReposNoProfiles(t *testing.T) {
 }
 
 func TestNucleusModal_VisibleFields_MultipleRepos(t *testing.T) {
+	// Repo field is only visible in review mode.
 	m := NewNucleusModal(80)
+	m.mode = ModeReview
 	m = m.SetRepos([]string{"/a", "/b"})
 	fields := m.visibleFields()
 	if !containsField(fields, ModalFieldRepo) {
-		t.Fatal("expected ModalFieldRepo when multiple repos")
+		t.Fatal("expected ModalFieldRepo when multiple repos in review mode")
 	}
 }
 
@@ -276,11 +278,13 @@ func TestNucleusModal_VisibleFields_SingleRepo_NoRepoField(t *testing.T) {
 }
 
 func TestNucleusModal_VisibleFields_WithProfiles(t *testing.T) {
+	// Profile field is only visible in review mode.
 	m := NewNucleusModal(80)
+	m.mode = ModeReview
 	m = m.SetProfiles([]string{"work"}, map[string]string{"work": "~/.claude-work"})
 	fields := m.visibleFields()
 	if !containsField(fields, ModalFieldProfile) {
-		t.Fatal("expected ModalFieldProfile when profiles are configured")
+		t.Fatal("expected ModalFieldProfile when profiles are configured in review mode")
 	}
 }
 
@@ -296,12 +300,23 @@ func TestNucleusModal_Tab_AdvancesField(t *testing.T) {
 	}
 }
 
-func TestNucleusModal_Tab_WrapsFromWorktree(t *testing.T) {
+func TestNucleusModal_Tab_WrapsFromTask(t *testing.T) {
+	// Develop mode: Tab wraps from Task back to Mode.
 	m := NewNucleusModal(80)
-	m.focused = ModalFieldWorktree
+	m.focused = ModalFieldTask
 	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.focused != ModalFieldMode {
-		t.Fatalf("expected ModalFieldMode after Tab wrap, got %v", m.focused)
+		t.Fatalf("expected ModalFieldMode after Tab wrap from Task, got %v", m.focused)
+	}
+}
+
+func TestNucleusModal_Tab_WrapsFromWorktree_ReviewMode(t *testing.T) {
+	m := NewNucleusModal(80)
+	m.mode = ModeReview
+	m.focused = ModalFieldTask
+	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focused != ModalFieldMode {
+		t.Fatalf("expected ModalFieldMode after Tab wrap from Task, got %v", m.focused)
 	}
 }
 
@@ -316,12 +331,14 @@ func TestNucleusModal_Tab_SkipsRepoWhenSingleRepo(t *testing.T) {
 }
 
 func TestNucleusModal_Tab_IncludesRepoWhenMultiple(t *testing.T) {
+	// Repo is only shown in review mode.
 	m := NewNucleusModal(80)
+	m.mode = ModeReview
 	m = m.SetRepos([]string{"/a", "/b"})
 	m.focused = ModalFieldMode
 	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.focused != ModalFieldRepo {
-		t.Fatalf("expected ModalFieldRepo after Tab from Mode, got %v", m.focused)
+		t.Fatalf("expected ModalFieldRepo after Tab from Mode in review mode, got %v", m.focused)
 	}
 }
 
@@ -787,21 +804,23 @@ func TestNucleusModal_View_ShowsPRContext(t *testing.T) {
 }
 
 func TestNucleusModal_View_ShowsRepoWhenMultiple(t *testing.T) {
+	// Repo picker is only shown in review mode.
 	m := NewNucleusModal(80)
 	m = m.SetRepos([]string{"/a/project", "/b/other"})
-	m, _ = m.Open(NucleusModalContext{})
+	m, _ = m.Open(NucleusModalContext{Mode: ModeReview})
 	m.repos = []string{"/a/project", "/b/other"} // re-set after Open resets
 	view := m.View()
 	if !strings.Contains(view, "project") {
-		t.Fatalf("expected repo name in view when multiple repos, got:\n%s", view)
+		t.Fatalf("expected repo name in view in review mode, got:\n%s", view)
 	}
 }
 
 func TestNucleusModal_View_ShowsWorktreeCheck(t *testing.T) {
+	// Worktree toggle is only shown in review mode.
 	m := NewNucleusModal(80)
-	m, _ = m.Open(NucleusModalContext{})
+	m, _ = m.Open(NucleusModalContext{Mode: ModeReview})
 	if !strings.Contains(m.View(), "✓") && !strings.Contains(m.View(), "worktree") {
-		t.Fatal("expected worktree toggle in view")
+		t.Fatal("expected worktree toggle in review mode view")
 	}
 }
 
