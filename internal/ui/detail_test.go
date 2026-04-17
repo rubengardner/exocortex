@@ -9,7 +9,7 @@ import (
 )
 
 // newDetailModel builds a Model loaded with sampleNuclei and the AddNeuron + GotoNeuron services.
-func newDetailModel(addNeuronFn func(nucleusID, neuronType, profile string) error, gotoNeuronFn func(nucleusID, neuronID string) error) ui.Model {
+func newDetailModel(addNeuronFn func(nucleusID, neuronType, repoPath, branch string) error, gotoNeuronFn func(nucleusID, neuronID string) error) ui.Model {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
@@ -167,7 +167,7 @@ func TestNucleusDetail_GotoCallsGotoNeuron(t *testing.T) {
 // ── NeuronAdd overlay ─────────────────────────────────────────────────────────
 
 func TestNeuronAdd_OpenOnA(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, profile string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	if m3.(ui.Model).State() != ui.StateNeuronAdd {
@@ -176,7 +176,7 @@ func TestNeuronAdd_OpenOnA(t *testing.T) {
 }
 
 func TestNeuronAdd_EscReturnsToDetail(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, profile string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	m4, _ := pressSpecial(m3, tea.KeyEsc)
@@ -186,12 +186,11 @@ func TestNeuronAdd_EscReturnsToDetail(t *testing.T) {
 }
 
 func TestNeuronAdd_SelectTypeAndSubmit(t *testing.T) {
-	var calledWith struct{ nucleusID, neuronType, profile string }
+	var calledWith struct{ nucleusID, neuronType string }
 	m := newDetailModel(
-		func(nucleusID, neuronType, profile string) error {
+		func(nucleusID, neuronType, repoPath, branch string) error {
 			calledWith.nucleusID = nucleusID
 			calledWith.neuronType = neuronType
-			calledWith.profile = profile
 			return nil
 		},
 		nil,
@@ -226,7 +225,7 @@ func TestNucleusDetailDashboard_DoesNotPanic(t *testing.T) {
 }
 
 func TestNeuronAdd_ViewDoesNotPanic(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, profile string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	defer func() {

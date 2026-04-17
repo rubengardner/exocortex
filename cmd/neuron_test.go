@@ -103,7 +103,7 @@ func TestExecuteAddNeuron_Claude(t *testing.T) {
 	}
 	tm := &fakeTmuxNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "", reg, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "", reg, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestExecuteAddNeuron_Shell(t *testing.T) {
 	}
 	tm := &fakeTmuxNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "shell", "", reg, tm)
+	err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestExecuteAddNeuron_WithClaudeConfigDir(t *testing.T) {
 	}
 	tm := &fakeTmuxNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "~/.claude-work", reg, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "~/.claude-work", reg, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
 	}
 	tm := &fakeTmuxNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", reg, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo/.worktrees/nucl1" {
@@ -204,7 +204,7 @@ func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
 	}
 	tm := &fakeTmuxNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", reg, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo" {

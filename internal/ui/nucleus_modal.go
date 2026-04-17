@@ -544,6 +544,8 @@ func (m NucleusModal) View() string {
 	m.renderModeField(&sb)
 	sb.WriteString("\n\n")
 
+	sb.WriteString(StyleDim.Render("── Neuron ──────────────") + "\n\n")
+
 	if len(m.repos) > 1 {
 		m.renderRepoField(&sb)
 		sb.WriteString("\n\n")
@@ -553,6 +555,14 @@ func (m NucleusModal) View() string {
 		m.renderProfileField(&sb)
 		sb.WriteString("\n\n")
 	}
+
+	m.renderBranchField(&sb)
+	sb.WriteString("\n\n")
+
+	m.renderWorktreeField(&sb)
+	sb.WriteString("\n\n")
+
+	sb.WriteString(StyleDim.Render("── Nucleus ─────────────") + "\n\n")
 
 	if m.mode == ModeReview && m.prNumber != 0 {
 		sb.WriteString(StyleLabel.Render("PR") +
@@ -564,12 +574,6 @@ func (m NucleusModal) View() string {
 	}
 
 	m.renderTaskField(&sb)
-	sb.WriteString("\n\n")
-
-	m.renderBranchField(&sb)
-	sb.WriteString("\n\n")
-
-	m.renderWorktreeField(&sb)
 
 	if m.err != "" {
 		sb.WriteString("\n\n")

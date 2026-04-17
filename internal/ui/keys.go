@@ -23,6 +23,7 @@ type KeyMap struct {
 	Board         key.Binding
 	GitHub        key.Binding
 	AddNeuron     key.Binding
+	AddPR         key.Binding
 	OpenBrowser   key.Binding
 	Filter        key.Binding
 }
@@ -105,6 +106,10 @@ func DefaultKeys() KeyMap {
 		AddNeuron: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add neuron"),
+		),
+		AddPR: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "add PR"),
 		),
 		OpenBrowser: key.NewBinding(
 			key.WithKeys("o"),

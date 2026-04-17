@@ -18,6 +18,7 @@ const (
 	StateGitHubPRDetail                 // full-screen GitHub PR detail
 	StateGitHubFilter                   // filter modal overlay on top of StateGitHubView
 	StateNucleusModal                   // unified new-nucleus modal (from any screen)
+	StatePRAdd                          // PR add overlay (from nucleus detail)
 
 	// Deprecated aliases kept for test compatibility — map to StateNucleusModal.
 	StateNewOverlay    = StateNucleusModal
@@ -40,4 +41,5 @@ const (
 	stateGitHubPRDetail = StateGitHubPRDetail
 	stateGitHubFilter   = StateGitHubFilter
 	stateNucleusModal   = StateNucleusModal
+	statePRAdd          = StatePRAdd
 )

@@ -94,15 +94,20 @@ func buildServices() ui.Services {
 			}
 			return tm.SelectPane(neu.TmuxTarget)
 		},
-		AddNeuron: func(nucleusID, neuronType, profileName string) error {
+		AddNeuron: func(nucleusID, neuronType, repoPath, branch string) error {
 			claudeConfigDir := ""
-			if profileName != "" {
-				cfg, err := iconfig.Load(iconfig.DefaultPath())
-				if err == nil {
-					claudeConfigDir = cfg.Profiles[profileName]
+			if neuronType == "claude" {
+				r, _ := reg.Load()
+				if n, err := r.FindByID(nucleusID); err == nil {
+					if primary := n.PrimaryNeuron(); primary != nil {
+						claudeConfigDir = primary.Profile
+					}
 				}
 			}
-			return executeAddNeuron(nucleusID, neuronType, claudeConfigDir, reg, tm)
+			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir, reg, tm)
+		},
+		AddPullRequest: func(nucleusID string, pr registry.PullRequest) error {
+			return registry.AddPullRequest(registry.DefaultPath(), nucleusID, pr)
 		},
 		LoadBranchInfo: func(worktreePath string) ([]string, []string, error) {
 			modified, err := gt.ModifiedFiles(worktreePath)

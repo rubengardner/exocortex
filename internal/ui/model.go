@@ -37,7 +37,8 @@ type Services struct {
 	OpenNvim      func(id string) error
 	CloseNvim     func(id string) error  // nil disables binding
 	RespawnNucleus func(id string) error // nil disables binding
-	AddNeuron     func(nucleusID, neuronType, profile string) error // nil disables neuron add
+	AddNeuron     func(nucleusID, neuronType, repoPath, branch string) error // nil disables neuron add
+	AddPullRequest func(nucleusID string, pr registry.PullRequest) error    // nil disables PR add
 	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
 	// LoadGitHubPRs fetches open PRs matching the given filter; nil disables the GitHub view.
 	LoadGitHubPRs func(filter github.PRFilter) ([]github.PR, error)
@@ -117,8 +118,16 @@ type Model struct {
 	branchAheadCommits []string
 
 	// neuron add state
-	neuronAddNucleusID string
-	neuronAddCursor    int
+	neuronAddNucleusID  string
+	neuronAddCursor     int
+	neuronAddPhase      int             // 0 = type picker, 1 = repo+branch form (claude only)
+	neuronAddRepos      []string        // loaded when entering phase 1
+	neuronAddRepoCursor int
+	neuronAddBranch     textinput.Model // branch input for phase 1
+
+	// PR add state
+	prAddNucleusID string
+	prAdd          prAddForm
 
 	// github PR list state
 	githubPRs      []github.PR
@@ -158,6 +167,7 @@ func New(svc Services) Model {
 		keys:           DefaultKeys(),
 		help:           h,
 		nucleusModal:   NewNucleusModal(80),
+		prAdd:          newPRAddForm(),
 		previewEnabled: true,
 	}
 }
@@ -366,6 +376,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case neuronAddReposLoadedMsg:
+		if msg.err == nil && len(msg.repos) > 0 {
+			m.neuronAddRepos = msg.repos
+		}
+		return m, nil
+
 	case actionDoneMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
@@ -395,6 +411,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateNucleusDetail(msg)
 		case stateNeuronAdd:
 			return m.updateNeuronAdd(msg)
+		case statePRAdd:
+			return m.updatePRAdd(msg)
 		case stateGitHubView:
 			return m.updateGitHubView(msg)
 		case stateGitHubPRDetail:
@@ -428,6 +446,8 @@ func (m Model) View() string {
 		return m.viewNucleusDetailDashboard()
 	case stateNeuronAdd:
 		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewNeuronAdd())
+	case statePRAdd:
+		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewPRAdd())
 	case stateGitHubView:
 		return m.viewGitHubView()
 	case stateGitHubPRDetail:
@@ -607,14 +627,19 @@ func (m Model) captureDetailPaneCmd() tea.Cmd {
 	}
 }
 
-// loadBranchInfoCmd fires an async git status/log fetch for the current nucleus.
+// loadBranchInfoCmd fires an async git status/log fetch for the selected neuron.
 func (m Model) loadBranchInfoCmd() tea.Cmd {
 	if m.services.LoadBranchInfo == nil || len(m.nuclei) == 0 {
 		return nil
 	}
+	n := m.nuclei[m.cursor]
+	idx := m.detailNeuronIdx
+	if idx >= len(n.Neurons) {
+		idx = 0
+	}
 	worktreePath := ""
-	if primary := m.nuclei[m.cursor].PrimaryNeuron(); primary != nil {
-		worktreePath = primary.WorktreePath
+	if len(n.Neurons) > 0 {
+		worktreePath = n.Neurons[idx].Workdir()
 	}
 	svc := m.services.LoadBranchInfo
 	return func() tea.Msg {

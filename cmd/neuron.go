@@ -8,8 +8,9 @@ import (
 )
 
 // executeAddNeuron adds a new Neuron of the given type to an existing Nucleus.
+// repoPath and branch are stored on the new neuron (empty = inherit primary neuron's workdir).
 // For claude neurons, claudeConfigDir sets the CLAUDE_CONFIG_DIR env var.
-func executeAddNeuron(nucleusID, neuronType, claudeConfigDir string, reg nucleusSvc, tm tmuxSvc) error {
+func executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir string, reg nucleusSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
@@ -21,7 +22,12 @@ func executeAddNeuron(nucleusID, neuronType, claudeConfigDir string, reg nucleus
 
 	neuronID := nextNeuronID(n.Neurons, neuronType)
 
-	target, err := tm.NewWindow(n.Workdir(), neuronType+"-"+nucleusID)
+	workdir := n.Workdir()
+	if repoPath != "" {
+		workdir = repoPath
+	}
+
+	target, err := tm.NewWindow(workdir, neuronType+"-"+nucleusID)
 	if err != nil {
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
@@ -50,6 +56,8 @@ func executeAddNeuron(nucleusID, neuronType, claudeConfigDir string, reg nucleus
 		TmuxTarget: target,
 		Profile:    claudeConfigDir,
 		Status:     "idle",
+		RepoPath:   repoPath,
+		Branch:     branch,
 	}
 
 	return reg.AddNeuron(nucleusID, neuron)

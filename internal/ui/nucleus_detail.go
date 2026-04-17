@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,8 +24,10 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.detailNeuronIdx > 0 {
 			m.detailNeuronIdx--
 			m.paneContent = ""
+			m.branchModified = nil
+			m.branchAheadCommits = nil
 		}
-		return m, m.captureDetailPaneCmd()
+		return m, tea.Batch(m.captureDetailPaneCmd(), m.loadBranchInfoCmd())
 
 	case matchKey(msg, m.keys.Down):
 		if len(m.nuclei) > 0 {
@@ -32,9 +35,11 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.detailNeuronIdx < len(n.Neurons)-1 {
 				m.detailNeuronIdx++
 				m.paneContent = ""
+				m.branchModified = nil
+				m.branchAheadCommits = nil
 			}
 		}
-		return m, m.captureDetailPaneCmd()
+		return m, tea.Batch(m.captureDetailPaneCmd(), m.loadBranchInfoCmd())
 
 	case matchKey(msg, m.keys.Goto):
 		if len(m.nuclei) == 0 {
@@ -69,8 +74,20 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.neuronAddNucleusID = m.nuclei[m.cursor].ID
 		m.neuronAddCursor = 0
+		m.neuronAddPhase = 0
+		m.neuronAddRepos = nil
 		m.state = stateNeuronAdd
 		return m, nil
+
+	case matchKey(msg, m.keys.AddPR):
+		if len(m.nuclei) == 0 || m.services.AddPullRequest == nil {
+			return m, nil
+		}
+		m.prAddNucleusID = m.nuclei[m.cursor].ID
+		m.prAdd = newPRAddForm()
+		m.state = statePRAdd
+		cmd := m.prAdd.repoInput.Focus()
+		return m, cmd
 
 	case matchKey(msg, m.keys.CloseNvim):
 		if len(m.nuclei) == 0 || m.services.CloseNvim == nil {
@@ -163,6 +180,13 @@ func (m Model) viewNeuronCluster(n registry.Nucleus, width int) string {
 			sb.WriteString(StyleSelected.Width(width).Render("▶"+row[1:]) + "\n")
 		} else {
 			sb.WriteString(row + "\n")
+		}
+
+		// Dim second line: branch + repo basename (omitted when both empty).
+		if neu.Branch != "" || neu.RepoPath != "" {
+			repoBase := filepath.Base(neu.RepoPath)
+			line2 := "  " + truncate(neu.Branch, width/2-4) + "  " + StyleDim.Render(repoBase)
+			sb.WriteString(StyleDim.Render(line2) + "\n")
 		}
 	}
 	return sb.String()
@@ -307,7 +331,7 @@ func (m Model) viewDetailStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   p preview   r refresh")
+	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   P add PR   p preview   r refresh")
 }
 
 // firstLine returns the first non-empty line of s, useful for PR body previews.
