@@ -56,6 +56,7 @@ type fakeRegistryNeuronAdd struct {
 	nuclei      []registry.Nucleus
 	addedNeuron registry.Neuron
 	addedTo     string
+	addedPR     registry.PullRequest
 }
 
 func (f *fakeRegistryNeuronAdd) Load() (*registry.Registry, error) {
@@ -71,6 +72,10 @@ func (f *fakeRegistryNeuronAdd) AddNeuron(nucleusID string, neuron registry.Neur
 }
 func (f *fakeRegistryNeuronAdd) RemoveNeuron(nucleusID, neuronID string) error  { return nil }
 func (f *fakeRegistryNeuronAdd) UpdateNeuronTarget(nID, neuID, target string) error { return nil }
+func (f *fakeRegistryNeuronAdd) AddPullRequest(nucleusID string, pr registry.PullRequest) error {
+	f.addedPR = pr
+	return nil
+}
 
 type fakeTmuxNeuronAdd struct {
 	newWindowTarget string
@@ -90,6 +95,18 @@ func (f *fakeTmuxNeuronAdd) WindowExists(target string) (bool, error)      { ret
 func (f *fakeTmuxNeuronAdd) CurrentTarget() (string, error)                { return "main:1.0", nil }
 func (f *fakeTmuxNeuronAdd) CapturePane(target string) (string, error)     { return "", nil }
 
+type fakeGitNeuronAdd struct{}
+
+func (g *fakeGitNeuronAdd) AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error {
+	return nil
+}
+func (g *fakeGitNeuronAdd) RemoveWorktree(repoPath, worktreePath string) error { return nil }
+func (g *fakeGitNeuronAdd) ModifiedFiles(worktreePath string) ([]string, error) { return nil, nil }
+func (g *fakeGitNeuronAdd) BranchExists(repoPath, branch string) (bool, error) { return false, nil }
+func (g *fakeGitNeuronAdd) AheadCommits(worktreePath string) ([]string, error) { return nil, nil }
+func (g *fakeGitNeuronAdd) ListBranches(repoPath string) ([]string, error)     { return nil, nil }
+func (g *fakeGitNeuronAdd) Checkout(repoPath, branch string) error             { return nil }
+
 func TestExecuteAddNeuron_Claude(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
@@ -102,8 +119,9 @@ func TestExecuteAddNeuron_Claude(t *testing.T) {
 		},
 	}
 	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "", "", "", reg, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "", false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,8 +149,9 @@ func TestExecuteAddNeuron_Shell(t *testing.T) {
 		},
 	}
 	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm)
+	err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,26 +168,26 @@ func TestExecuteAddNeuron_Shell(t *testing.T) {
 }
 
 func TestExecuteAddNeuron_WithClaudeConfigDir(t *testing.T) {
+	// Profile is now on the Nucleus, not passed as an argument.
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID: "nucl1",
+				ID:      "nucl1",
+				Profile: "~/.claude-work",
 				Neurons: []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude, WorktreePath: "/repo/.worktrees/nucl1"}},
 			},
 		},
 	}
 	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "", "", "~/.claude-work", reg, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "", false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := "CLAUDE_CONFIG_DIR=~/.claude-work claude"
 	if tm.sentKeys != want {
 		t.Fatalf("expected %q, got %q", want, tm.sentKeys)
-	}
-	if reg.addedNeuron.Profile != "~/.claude-work" {
-		t.Fatalf("expected profile stored, got %q", reg.addedNeuron.Profile)
 	}
 }
 
@@ -182,12 +201,43 @@ func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
 		},
 	}
 	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo/.worktrees/nucl1" {
 		t.Fatalf("expected worktree path, got %q", tm.newWindowDir)
+	}
+}
+
+func TestExecuteAppendPRNeuron_AddsNvimNeuronAndPR(t *testing.T) {
+	reg := &fakeRegistryNeuronAdd{
+		nuclei: []registry.Nucleus{
+			{
+				ID: "nucl1",
+				Neurons: []registry.Neuron{
+					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/nucl1"},
+				},
+			},
+		},
+	}
+	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
+
+	pr := registry.PullRequest{Number: 7, Repo: "org/repo"}
+	err := executeAppendPRNeuron("nucl1", "/repo", "feat/oauth", pr, reg, gt, tm, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reg.addedNeuron.Type != registry.NeuronNvim {
+		t.Fatalf("expected nvim neuron, got %s", reg.addedNeuron.Type)
+	}
+	if tm.sentKeys != "nvim ." {
+		t.Fatalf("expected 'nvim .' sent, got %q", tm.sentKeys)
+	}
+	if reg.addedPR.Number != 7 {
+		t.Fatalf("expected PR #7 stored, got %d", reg.addedPR.Number)
 	}
 }
 
@@ -203,8 +253,9 @@ func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
 		},
 	}
 	tm := &fakeTmuxNeuronAdd{}
+	gt := &fakeGitNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", "", "", reg, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo" {

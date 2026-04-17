@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-
 // JiraConfig holds credentials and settings for the Jira board view.
 type JiraConfig struct {
 	BaseURL  string   `json:"base_url"`
@@ -36,6 +35,12 @@ type GitHubConfig struct {
 	Teammates []string `json:"teammates,omitempty"`  // teammates' GitHub logins for filter modal
 }
 
+// RepoConfig holds per-repository settings shown in the TUI repo picker.
+type RepoConfig struct {
+	Path         string   `json:"path"`
+	BaseBranches []string `json:"base_branches,omitempty"`
+}
+
 // GitHubRepoNames returns "Org/dirname" for every path in Config.Repos.
 // Used to populate the REPOSITORIES section of the GitHub filter modal.
 // Returns nil when GitHub is unconfigured, Org is empty, or Repos is empty.
@@ -44,8 +49,8 @@ func (c *Config) GitHubRepoNames() []string {
 		return nil
 	}
 	names := make([]string, 0, len(c.Repos))
-	for _, p := range c.Repos {
-		p = strings.TrimRight(p, "/")
+	for _, r := range c.Repos {
+		p := strings.TrimRight(r.Path, "/")
 		names = append(names, c.GitHub.Org+"/"+filepath.Base(p))
 	}
 	return names
@@ -53,9 +58,10 @@ func (c *Config) GitHubRepoNames() []string {
 
 // Config holds user-level settings for exocortex.
 type Config struct {
-	// Repos is the list of absolute repository paths shown in the TUI repo picker.
+	// Repos is the list of repository configurations shown in the TUI repo picker.
 	// Edit ~/.config/exocortex/config.json to add or remove entries.
-	Repos []string `json:"repos"`
+	// Legacy format (plain string paths) is auto-migrated on load.
+	Repos []RepoConfig `json:"repos,omitempty"`
 
 	// Profiles maps a profile name to the CLAUDE_CONFIG_DIR path for that profile.
 	// Example: {"work": "~/.claude-work", "personal": "~/.claude-personal"}
@@ -79,6 +85,7 @@ func DefaultPath() string {
 
 // Load reads the config from path. Returns an empty Config if the file does
 // not exist; any other error is returned to the caller.
+// Legacy configs with repos as []string are silently migrated to []RepoConfig.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -87,11 +94,46 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+
+	// Probe the repos field independently to handle legacy []string format.
+	var reposProbe struct {
+		Repos json.RawMessage `json:"repos"`
+	}
+	_ = json.Unmarshal(data, &reposProbe)
+
+	var repos []RepoConfig
+	if len(reposProbe.Repos) > 0 && string(reposProbe.Repos) != "null" {
+		if err := json.Unmarshal(reposProbe.Repos, &repos); err != nil {
+			// Legacy format: clear any partial zero-value entries from the failed
+			// decode attempt, then try []string migration.
+			repos = nil
+			var paths []string
+			if err2 := json.Unmarshal(reposProbe.Repos, &paths); err2 == nil {
+				for _, p := range paths {
+					repos = append(repos, RepoConfig{Path: p})
+				}
+			}
+		}
+	}
+
+	// Unmarshal remaining fields using a struct that excludes repos to avoid
+	// type mismatch when the on-disk format is legacy []string.
+	type configRest struct {
+		Profiles map[string]string `json:"profiles,omitempty"`
+		Jira     *JiraConfig       `json:"jira,omitempty"`
+		GitHub   *GitHubConfig     `json:"github,omitempty"`
+	}
+	var rest configRest
+	if err := json.Unmarshal(data, &rest); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
-	return &c, nil
+
+	return &Config{
+		Repos:    repos,
+		Profiles: rest.Profiles,
+		Jira:     rest.Jira,
+		GitHub:   rest.GitHub,
+	}, nil
 }
 
 // Save writes the config to path atomically (temp file + rename).

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	iconfig "github.com/ruben_gardner/exocortex/internal/config"
@@ -41,7 +43,23 @@ func buildServices() ui.Services {
 			if err != nil {
 				return nil, err
 			}
-			return cfg.Repos, nil
+			paths := make([]string, len(cfg.Repos))
+			for i, r := range cfg.Repos {
+				paths[i] = r.Path
+			}
+			return paths, nil
+		},
+		BaseBranchesForRepo: func(repoPath string) []string {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil {
+				return nil
+			}
+			for _, r := range cfg.Repos {
+				if r.Path == repoPath {
+					return r.BaseBranches
+				}
+			}
+			return nil
 		},
 		LoadProfiles: func() (map[string]string, error) {
 			cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -60,8 +78,8 @@ func buildServices() ui.Services {
 			}
 			return r.Nuclei, nil
 		},
-		CreateNucleus: func(task, jiraKey string) error {
-			return executeCreateNucleusOnly(task, jiraKey, reg)
+		CreateNucleus: func(task, jiraKey, profile string) error {
+			return executeCreateNucleusOnly(task, jiraKey, profile, reg)
 		},
 		RemoveNucleus: func(id string) error {
 			return executeRemove(id, reg, gt, tm)
@@ -87,17 +105,8 @@ func buildServices() ui.Services {
 			}
 			return tm.SelectPane(neu.TmuxTarget)
 		},
-		AddNeuron: func(nucleusID, neuronType, repoPath, branch string) error {
-			claudeConfigDir := ""
-			if neuronType == "claude" {
-				r, _ := reg.Load()
-				if n, err := r.FindByID(nucleusID); err == nil {
-					if primary := n.PrimaryNeuron(); primary != nil {
-						claudeConfigDir = primary.Profile
-					}
-				}
-			}
-			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir, reg, tm)
+		AddNeuron: func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error {
+			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch, createBranch, reg, gt, tm)
 		},
 		AddPullRequest: func(nucleusID string, pr registry.PullRequest) error {
 			return registry.AddPullRequest(registry.DefaultPath(), nucleusID, pr)
@@ -182,15 +191,23 @@ func buildServices() ui.Services {
 		ListBranches: func(repoPath string) ([]string, error) {
 			return gt.ListBranches(repoPath)
 		},
-		CreateReviewNucleus: func(task, repo, branch, profileName string, pr registry.PullRequest, createWorktree bool) error {
+		AppendPRToNucleus: func(nucleusID string, pr registry.PullRequest, repo, branch string) error {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil {
+				return err
+			}
+			repoPath := resolveRepoPath(cfg, repo)
+			return executeAppendPRNeuron(nucleusID, repoPath, branch, pr, reg, gt, tm, io.Discard)
+		},
+		CreateReviewNucleus: func(task, profile string, pr registry.PullRequest, repo, branch string) error {
 			claudeConfigDir := ""
-			if profileName != "" {
+			if profile != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
 				if err == nil {
-					claudeConfigDir = cfg.Profiles[profileName]
+					claudeConfigDir = cfg.Profiles[profile]
 				}
 			}
-			return executeReview(task, repo, branch, claudeConfigDir, pr.Number, pr.Repo, createWorktree, reg, gt, tm, io.Discard)
+			return executeCreateReviewNucleus(task, repo, branch, claudeConfigDir, pr, reg, gt, tm, io.Discard)
 		},
 		OpenNvimFile: func(nucleusID, filePath string, line int) error {
 			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)
@@ -199,4 +216,19 @@ func buildServices() ui.Services {
 			return exec.Command("open", url).Start()
 		},
 	}
+}
+
+// resolveRepoPath maps a "org/repo" short name to the matching local repo path
+// from config. Falls back to "." when no match is found.
+func resolveRepoPath(cfg *iconfig.Config, prRepo string) string {
+	repoName := prRepo
+	if idx := strings.LastIndex(prRepo, "/"); idx >= 0 {
+		repoName = prRepo[idx+1:]
+	}
+	for _, r := range cfg.Repos {
+		if filepath.Base(r.Path) == repoName {
+			return r.Path
+		}
+	}
+	return "."
 }

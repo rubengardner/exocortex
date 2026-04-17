@@ -107,6 +107,12 @@ type githubFilterConfirmedMsg struct {
 	filter github.PRFilter
 }
 
+// neuronAddBranchesLoadedMsg carries the existing branch list for the neuron add form.
+type neuronAddBranchesLoadedMsg struct {
+	branches []string
+	err      error
+}
+
 // githubFilterConfigLoadedMsg carries the static data needed to populate
 // the filter modal (loaded once per modal open from LoadGitHubFilterConfig).
 type githubFilterConfigLoadedMsg struct {

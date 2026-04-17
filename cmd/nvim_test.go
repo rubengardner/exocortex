@@ -10,7 +10,7 @@ type fakeGitNvim struct {
 	files []string
 }
 
-func (g *fakeGitNvim) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
+func (g *fakeGitNvim) AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error {
 	return nil
 }
 func (g *fakeGitNvim) RemoveWorktree(repoPath, worktreePath string) error    { return nil }
@@ -49,6 +49,8 @@ func (f *fakeRegistryNvim) UpdateNeuronTarget(nucleusID, neuronID, target string
 	f.updatedNeuronTarget = target
 	return nil
 }
+func (f *fakeRegistryNvim) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 type fakeTmuxNvim struct {
 	newWindowName  string

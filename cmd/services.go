@@ -6,7 +6,7 @@ package cmd
 import "github.com/ruben_gardner/exocortex/internal/registry"
 
 type gitSvc interface {
-	AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error
+	AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error
 	RemoveWorktree(repoPath, worktreePath string) error
 	ModifiedFiles(worktreePath string) ([]string, error)
 	BranchExists(repoPath, branch string) (bool, error)
@@ -33,4 +33,5 @@ type nucleusSvc interface {
 	AddNeuron(nucleusID string, neuron registry.Neuron) error
 	RemoveNeuron(nucleusID, neuronID string) error
 	UpdateNeuronTarget(nucleusID, neuronID, target string) error
+	AddPullRequest(nucleusID string, pr registry.PullRequest) error
 }

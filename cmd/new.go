@@ -73,7 +73,7 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWo
 		}
 		createBranch := !exists
 
-		if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch); err != nil {
+		if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, ""); err != nil {
 			return fmt.Errorf("git worktree add: %w", err)
 		}
 
@@ -105,12 +105,12 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWo
 		ID:              id,
 		TaskDescription: task,
 		JiraKey:         jiraKey,
+		Profile:         claudeConfigDir,
 		Neurons: []registry.Neuron{
 			{
 				ID:           "c1",
 				Type:         registry.NeuronClaude,
 				TmuxTarget:   target,
-				Profile:      claudeConfigDir,
 				Status:       "idle",
 				RepoPath:     repoPath,
 				WorktreePath: worktreePath,
@@ -129,9 +129,71 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWo
 	return nil
 }
 
+// executeCreateReviewNucleus creates a Nucleus with an nvim neuron for PR code review.
+// profile is stored on the nucleus so future Claude neurons inherit it.
+func executeCreateReviewNucleus(task, repoArg, branch, profile string, pr registry.PullRequest, reg nucleusSvc, gt gitSvc, tm tmuxSvc, out io.Writer) error {
+	repoPath, err := filepath.Abs(repoArg)
+	if err != nil {
+		return fmt.Errorf("resolve repo path: %w", err)
+	}
+
+	existing, err := reg.Load()
+	if err != nil {
+		return err
+	}
+
+	id := uniqueID(task, existing.Nuclei)
+	worktreePath := filepath.Join(repoPath, ".worktrees", id)
+
+	if err := gt.AddWorktree(repoPath, worktreePath, branch, false, ""); err != nil {
+		return fmt.Errorf("git worktree add: %w", err)
+	}
+
+	target, err := tm.NewWindow(worktreePath, task)
+	if err != nil {
+		_ = gt.RemoveWorktree(repoPath, worktreePath)
+		return fmt.Errorf("tmux new-window: %w", err)
+	}
+
+	if err := tm.SendKeys(target, "nvim ."); err != nil {
+		fmt.Fprintf(out, "warning: could not start nvim: %v\n", err)
+	}
+
+	var prs []registry.PullRequest
+	if pr.Number != 0 {
+		prs = []registry.PullRequest{pr}
+	}
+	nucleus := registry.Nucleus{
+		ID:              id,
+		TaskDescription: task,
+		Profile:         profile,
+		PullRequests:    prs,
+		Neurons: []registry.Neuron{
+			{
+				ID:           "nvim1",
+				Type:         registry.NeuronNvim,
+				TmuxTarget:   target,
+				Status:       "idle",
+				RepoPath:     repoPath,
+				WorktreePath: worktreePath,
+				Branch:       branch,
+			},
+		},
+		Status:    "idle",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := reg.Add(nucleus); err != nil {
+		return fmt.Errorf("registry add: %w", err)
+	}
+
+	fmt.Fprintf(out, "created review nucleus %s\n", id)
+	return nil
+}
+
 // executeCreateNucleusOnly creates an empty Nucleus with no neurons.
 // Neurons are added later via executeAddNeuron.
-func executeCreateNucleusOnly(task, jiraKey string, reg nucleusSvc) error {
+func executeCreateNucleusOnly(task, jiraKey, profile string, reg nucleusSvc) error {
 	existing, err := reg.Load()
 	if err != nil {
 		return err
@@ -141,6 +203,7 @@ func executeCreateNucleusOnly(task, jiraKey string, reg nucleusSvc) error {
 		ID:              id,
 		TaskDescription: task,
 		JiraKey:         jiraKey,
+		Profile:         profile,
 		Status:          "idle",
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -171,7 +234,7 @@ func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, 
 		worktreePath = filepath.Join(repoPath, ".worktrees", id)
 
 		// Check out existing branch — no -b flag.
-		if err := gt.AddWorktree(repoPath, worktreePath, branch, false); err != nil {
+		if err := gt.AddWorktree(repoPath, worktreePath, branch, false, ""); err != nil {
 			return fmt.Errorf("git worktree add: %w", err)
 		}
 
@@ -211,13 +274,13 @@ func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, 
 	nucleus := registry.Nucleus{
 		ID:              id,
 		TaskDescription: task,
+		Profile:         claudeConfigDir,
 		PullRequests:    prs,
 		Neurons: []registry.Neuron{
 			{
 				ID:           "c1",
 				Type:         registry.NeuronClaude,
 				TmuxTarget:   target,
-				Profile:      claudeConfigDir,
 				Status:       "idle",
 				RepoPath:     repoPath,
 				WorktreePath: worktreePath,

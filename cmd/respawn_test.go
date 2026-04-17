@@ -30,6 +30,8 @@ func (f *fakeRegistryRespawn) UpdateNeuronTarget(nucleusID, neuronID, target str
 	f.updatedNeuronTarget = target
 	return nil
 }
+func (f *fakeRegistryRespawn) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 type fakeTmuxRespawn struct {
 	windowExistsResult bool

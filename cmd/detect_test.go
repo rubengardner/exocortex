@@ -38,6 +38,8 @@ func (f *fakeRegistryDetect) RemoveNeuron(nucleusID, neuronID string) error { re
 func (f *fakeRegistryDetect) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
 	return nil
 }
+func (f *fakeRegistryDetect) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 func TestDetectAgentID_Match(t *testing.T) {
 	t.Setenv("TMUX_PANE", "%3")

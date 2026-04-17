@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ruben_gardner/exocortex/internal/github"
+	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
 // ── filterItem ────────────────────────────────────────────────────────────────
@@ -23,6 +24,12 @@ type filterItem struct {
 
 // updateGitHubView handles key events for the GitHub PR list.
 func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.githubProfilePick {
+		return m.updateGitHubProfilePicker(msg)
+	}
+	if m.githubNucleusPick {
+		return m.updateGitHubNucleusPicker(msg)
+	}
 	switch {
 	case matchKey(msg, m.keys.Cancel), matchKey(msg, m.keys.Quit):
 		m.state = stateList
@@ -80,21 +87,19 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return nil
 		}
 
-	case matchKey(msg, m.keys.Respawn): // R = start review workflow on selected PR
+	case matchKey(msg, m.keys.New):
 		if len(m.githubPRs) == 0 || m.services.CreateReviewNucleus == nil {
 			return m, nil
 		}
 		pr := m.githubPRs[m.githubPRCursor]
-		return m.openNucleusModal(NucleusModalContext{
-			Mode:     ModeReview,
-			PRNumber: pr.Number,
-			PRRepo:   pr.Repo,
-			PRTitle:  pr.Title,
-			PRBranch: pr.Branch,
-		})
+		return m.startGitHubProfilePick(pr)
 
-	case matchKey(msg, m.keys.New):
-		return m.openNucleusModal(NucleusModalContext{})
+	case msg.String() == "a":
+		if len(m.githubPRs) == 0 || m.services.AppendPRToNucleus == nil {
+			return m, nil
+		}
+		pr := m.githubPRs[m.githubPRCursor]
+		return m.startGitHubNucleusPick(pr)
 
 	case matchKey(msg, m.keys.Filter):
 		if m.services.LoadGitHubFilterConfig == nil {
@@ -103,6 +108,212 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadGitHubFilterConfigCmd()
 	}
 	return m, nil
+}
+
+// startGitHubProfilePick begins a profile selection or calls CreateReviewNucleus directly
+// when zero or one profile is configured.
+func (m Model) startGitHubProfilePick(pr github.PR) (tea.Model, tea.Cmd) {
+	svc := m.services.CreateReviewNucleus
+	switch len(m.githubProfileNames) {
+	case 0:
+		// No profiles configured — create with empty profile.
+		task := pr.Title
+		if task == "" {
+			task = fmt.Sprintf("PR #%d", pr.Number)
+		}
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(task, "", registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
+		}
+	case 1:
+		// Auto-select the only profile.
+		profile := m.githubProfileNames[0]
+		task := pr.Title
+		if task == "" {
+			task = fmt.Sprintf("PR #%d", pr.Number)
+		}
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(task, profile, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
+		}
+	default:
+		// Multiple profiles — show picker.
+		m.githubPickerPendingPR = pr
+		m.githubProfilePick = true
+		m.githubProfileCursor = 0
+		return m, nil
+	}
+}
+
+// updateGitHubProfilePicker handles key events for the inline profile picker overlay.
+func (m Model) updateGitHubProfilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case matchKey(msg, m.keys.Cancel):
+		m.githubProfilePick = false
+		return m, nil
+
+	case matchKey(msg, m.keys.Up):
+		if m.githubProfileCursor > 0 {
+			m.githubProfileCursor--
+		}
+
+	case matchKey(msg, m.keys.Down):
+		if m.githubProfileCursor < len(m.githubProfileNames)-1 {
+			m.githubProfileCursor++
+		}
+
+	case matchKey(msg, m.keys.Submit):
+		profile := m.githubProfileNames[m.githubProfileCursor]
+		pr := m.githubPickerPendingPR
+		svc := m.services.CreateReviewNucleus
+		task := pr.Title
+		if task == "" {
+			task = fmt.Sprintf("PR #%d", pr.Number)
+		}
+		m.githubProfilePick = false
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(task, profile, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
+		}
+	}
+	return m, nil
+}
+
+// viewGitHubProfilePicker renders the profile selection overlay content.
+func (m Model) viewGitHubProfilePicker() string {
+	var sb strings.Builder
+	pr := m.githubPickerPendingPR
+	title := pr.Title
+	if title == "" {
+		title = fmt.Sprintf("PR #%d", pr.Number)
+	}
+	sb.WriteString(StyleTitle.Render("Review PR") + "\n")
+	sb.WriteString(StyleDim.Render(truncate(title, 40)) + "\n\n")
+	sb.WriteString(StyleLabel.Render("Profile") + "\n")
+	for i, name := range m.githubProfileNames {
+		if i == m.githubProfileCursor {
+			sb.WriteString(StyleSelected.Render("  ▶ "+name) + "\n")
+		} else {
+			sb.WriteString("    " + name + "\n")
+		}
+	}
+	sb.WriteString("\n")
+	sb.WriteString(StyleDim.Render("↑/k") + " up   " +
+		StyleDim.Render("↓/j") + " down   " +
+		StyleDim.Render("enter") + " select   " +
+		StyleDim.Render("esc") + " cancel")
+	return sb.String()
+}
+
+// startGitHubNucleusPick opens the nucleus picker for a PR append operation.
+func (m Model) startGitHubNucleusPick(pr github.PR) (tea.Model, tea.Cmd) {
+	m.githubPickerPendingPR = pr
+	m.githubNucleusPick = true
+	m.githubPickerFilter = ""
+	m.githubPickerCursor = 0
+	m.githubPickerNuclei = m.nuclei
+	return m, nil
+}
+
+// updateGitHubNucleusPicker handles key events for the nucleus selection overlay.
+func (m Model) updateGitHubNucleusPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := githubFilteredNuclei(m.githubPickerNuclei, m.githubPickerFilter)
+
+	switch {
+	case matchKey(msg, m.keys.Cancel):
+		m.githubNucleusPick = false
+		m.githubPickerFilter = ""
+		return m, nil
+
+	case matchKey(msg, m.keys.Up):
+		if m.githubPickerCursor > 0 {
+			m.githubPickerCursor--
+		}
+
+	case matchKey(msg, m.keys.Down):
+		if m.githubPickerCursor < len(filtered)-1 {
+			m.githubPickerCursor++
+		}
+
+	case msg.Type == tea.KeyBackspace:
+		if len(m.githubPickerFilter) > 0 {
+			m.githubPickerFilter = m.githubPickerFilter[:len(m.githubPickerFilter)-1]
+			m.githubPickerCursor = 0
+		}
+
+	case matchKey(msg, m.keys.Submit):
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		if m.githubPickerCursor >= len(filtered) {
+			m.githubPickerCursor = 0
+		}
+		nucleus := filtered[m.githubPickerCursor]
+		pr := m.githubPickerPendingPR
+		svc := m.services.AppendPRToNucleus
+		m.githubNucleusPick = false
+		m.githubPickerFilter = ""
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(nucleus.ID, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
+		}
+
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.githubPickerFilter += string(msg.Runes)
+			m.githubPickerCursor = 0
+		}
+	}
+	return m, nil
+}
+
+// viewGitHubNucleusPicker renders the nucleus selection overlay content.
+func (m Model) viewGitHubNucleusPicker() string {
+	var sb strings.Builder
+	pr := m.githubPickerPendingPR
+	title := pr.Title
+	if title == "" {
+		title = fmt.Sprintf("PR #%d", pr.Number)
+	}
+	sb.WriteString(StyleTitle.Render("Append PR to Nucleus") + "\n")
+	sb.WriteString(StyleDim.Render(truncate(title, 40)) + "\n\n")
+
+	filtered := githubFilteredNuclei(m.githubPickerNuclei, m.githubPickerFilter)
+
+	sb.WriteString(StyleLabel.Render("Filter: ") + m.githubPickerFilter + "█\n\n")
+
+	if len(filtered) == 0 {
+		sb.WriteString(StyleDim.Render("  (no nuclei match)") + "\n")
+	} else {
+		for i, n := range filtered {
+			desc := truncate(n.TaskDescription, 32)
+			row := fmt.Sprintf("  %-8s  %s", n.ID, desc)
+			if i == m.githubPickerCursor {
+				sb.WriteString(StyleSelected.Render("▶ "+row) + "\n")
+			} else {
+				sb.WriteString("  " + row + "\n")
+			}
+		}
+	}
+	sb.WriteString("\n")
+	sb.WriteString(StyleDim.Render("type") + " filter   " +
+		StyleDim.Render("↑/k") + " up   " +
+		StyleDim.Render("↓/j") + " down   " +
+		StyleDim.Render("enter") + " append   " +
+		StyleDim.Render("esc") + " cancel")
+	return sb.String()
+}
+
+// githubFilteredNuclei returns nuclei whose ID or task description contains filter (case-insensitive).
+func githubFilteredNuclei(nuclei []registry.Nucleus, filter string) []registry.Nucleus {
+	if filter == "" {
+		return nuclei
+	}
+	low := strings.ToLower(filter)
+	var result []registry.Nucleus
+	for _, n := range nuclei {
+		if strings.Contains(strings.ToLower(n.ID), low) ||
+			strings.Contains(strings.ToLower(n.TaskDescription), low) {
+			result = append(result, n)
+		}
+	}
+	return result
 }
 
 // startPreviewLoad updates preview state on m and returns the load cmd.
@@ -125,6 +336,12 @@ func (m Model) startPreviewLoad() (tea.Model, tea.Cmd) {
 
 // updateGitHubPRDetail handles key events for the PR file-accordion detail.
 func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.githubProfilePick {
+		return m.updateGitHubProfilePicker(msg)
+	}
+	if m.githubNucleusPick {
+		return m.updateGitHubNucleusPicker(msg)
+	}
 	rightH := m.contentHeight()
 
 	switch {
@@ -159,21 +376,29 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.githubDetailScroll = 0
 		}
 
-	case matchKey(msg, m.keys.Respawn): // R = start review workflow on current PR
+	case matchKey(msg, m.keys.New):
 		if m.githubDetailPR == nil || m.services.CreateReviewNucleus == nil {
 			return m, nil
 		}
-		d := m.githubDetailPR
-		return m.openNucleusModal(NucleusModalContext{
-			Mode:     ModeReview,
-			PRNumber: d.Number,
-			PRRepo:   d.Repo,
-			PRTitle:  d.Title,
-			PRBranch: d.Branch,
-		})
+		pr := github.PR{
+			Number: m.githubDetailPR.Number,
+			Repo:   m.githubDetailPR.Repo,
+			Title:  m.githubDetailPR.Title,
+			Branch: m.githubDetailPR.Branch,
+		}
+		return m.startGitHubProfilePick(pr)
 
-	case matchKey(msg, m.keys.New):
-		return m.openNucleusModal(NucleusModalContext{})
+	case msg.String() == "a":
+		if m.githubDetailPR == nil || m.services.AppendPRToNucleus == nil {
+			return m, nil
+		}
+		pr := github.PR{
+			Number: m.githubDetailPR.Number,
+			Repo:   m.githubDetailPR.Repo,
+			Title:  m.githubDetailPR.Title,
+			Branch: m.githubDetailPR.Branch,
+		}
+		return m.startGitHubNucleusPick(pr)
 
 	case matchKey(msg, m.keys.Nvim):
 		if m.githubDetailPR == nil || m.services.OpenNvimFile == nil {
@@ -485,11 +710,14 @@ func (m Model) viewGitHubStatusBar() string {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
 	hint := "  q back   j/k select   enter detail"
+	if m.services.CreateReviewNucleus != nil {
+		hint += "   n review"
+	}
+	if m.services.AppendPRToNucleus != nil {
+		hint += "   a append"
+	}
 	if m.services.BrowserOpen != nil {
 		hint += "   o browser"
-	}
-	if m.services.CreateReviewNucleus != nil {
-		hint += "   R review"
 	}
 	hint += "   r refresh"
 	if m.services.LoadGitHubFilterConfig != nil {
@@ -504,7 +732,10 @@ func (m Model) viewGitHubDetailStatusBar() string {
 	}
 	hint := "  esc back   j/k file   space expand   pgdn/pgup scroll"
 	if m.services.CreateReviewNucleus != nil {
-		hint += "   R review"
+		hint += "   n review"
+	}
+	if m.services.AppendPRToNucleus != nil {
+		hint += "   a append"
 	}
 	if m.githubDetailPR != nil {
 		if linked := m.prLinkedNucleusID(m.githubDetailPR); m.services.OpenNvimFile != nil && linked != "" {

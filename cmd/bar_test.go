@@ -24,6 +24,8 @@ func (f *fakeRegistryBar) RemoveNeuron(nucleusID, neuronID string) error { retur
 func (f *fakeRegistryBar) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
 	return nil
 }
+func (f *fakeRegistryBar) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 func TestBar_NoWaiting(t *testing.T) {
 	reg := &fakeRegistryBar{nuclei: []registry.Nucleus{

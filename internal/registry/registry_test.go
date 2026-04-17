@@ -414,8 +414,8 @@ func TestMigrateV1toV3_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load v1: %v", err)
 	}
-	if r.Version != 3 {
-		t.Fatalf("expected version 3 after migration, got %d", r.Version)
+	if r.Version != 4 {
+		t.Fatalf("expected version 4 after migration, got %d", r.Version)
 	}
 	if len(r.Nuclei) != 1 {
 		t.Fatalf("expected 1 nucleus, got %d", len(r.Nuclei))
@@ -503,12 +503,9 @@ func TestMigrateV1toV3_WithProfile(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	n := r.Nuclei[0]
-	primary := n.PrimaryNeuron()
-	if primary == nil {
-		t.Fatal("expected primary neuron")
-	}
-	if primary.Profile != "~/.claude-work" {
-		t.Fatalf("profile not migrated: %s", primary.Profile)
+	// Profile is now on the Nucleus, not the Neuron.
+	if n.Profile != "~/.claude-work" {
+		t.Fatalf("profile not migrated to nucleus: %s", n.Profile)
 	}
 }
 
@@ -581,8 +578,8 @@ func TestMigrateV2toV3_MovesFieldsToNeuron(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load v2: %v", err)
 	}
-	if r.Version != 3 {
-		t.Fatalf("expected version 3, got %d", r.Version)
+	if r.Version != 4 {
+		t.Fatalf("expected version 4, got %d", r.Version)
 	}
 	n := r.Nuclei[0]
 	primary := n.PrimaryNeuron()

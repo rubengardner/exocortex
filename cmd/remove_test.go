@@ -27,13 +27,15 @@ func (f *fakeRegistryRemove) RemoveNeuron(nucleusID, neuronID string) error     
 func (f *fakeRegistryRemove) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
 	return nil
 }
+func (f *fakeRegistryRemove) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 type fakeGitRemove struct {
 	removeCalled bool
 	removeErr    error
 }
 
-func (g *fakeGitRemove) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
+func (g *fakeGitRemove) AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error {
 	return nil
 }
 func (g *fakeGitRemove) RemoveWorktree(repoPath, worktreePath string) error {

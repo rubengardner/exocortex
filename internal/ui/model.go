@@ -30,14 +30,15 @@ type Services struct {
 	LoadJiraIssueMeta func(key string) (*jira.Issue, error)
 	CapturePane       func(tmuxTarget string) (string, error) // nil disables live preview
 	// CreateNucleus creates an empty nucleus (no neurons). Neurons are added later via AddNeuron.
-	CreateNucleus func(task, jiraKey string) error
+	// profile is the CLAUDE_CONFIG_DIR path (from nucleus-level profile selection).
+	CreateNucleus func(task, jiraKey, profile string) error
 	RemoveNucleus func(id string) error
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
 	OpenNvim      func(id string) error
 	CloseNvim     func(id string) error  // nil disables binding
 	RespawnNucleus func(id string) error // nil disables binding
-	AddNeuron     func(nucleusID, neuronType, repoPath, branch string) error // nil disables neuron add
+	AddNeuron     func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error // nil disables neuron add
 	AddPullRequest func(nucleusID string, pr registry.PullRequest) error    // nil disables PR add
 	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
 	// LoadGitHubPRs fetches open PRs matching the given filter; nil disables the GitHub view.
@@ -49,10 +50,17 @@ type Services struct {
 	LoadGitHubPR func(repo string, number int) (*github.PRDetail, error)
 	// ListBranches returns local branch names for a repo; used in the review workflow.
 	ListBranches func(repoPath string) ([]string, error)
-	// CreateReviewNucleus creates a nucleus on an existing branch for PR review.
-	// createWorktree=false skips git worktree creation.
-	// nil disables the review workflow.
-	CreateReviewNucleus func(task, repo, branch, profile string, pr registry.PullRequest, createWorktree bool) error
+	// BaseBranchesForRepo returns the configured base branches for a repo path.
+	// Returns nil when the repo is not configured or has no base branches set.
+	BaseBranchesForRepo func(repoPath string) []string
+	// CreateReviewNucleus creates a nucleus with an nvim neuron on an existing PR branch.
+	// profile is the display name of the profile to use (resolved to CLAUDE_CONFIG_DIR by the caller).
+	// nil disables the direct PR → nucleus flow.
+	CreateReviewNucleus func(task, profile string, pr registry.PullRequest, repo, branch string) error
+	// AppendPRToNucleus adds an nvim neuron + PR record to an existing nucleus.
+	// repo is a short "org/name" identifier resolved to a local path by the caller.
+	// nil disables the `a` key in GitHub views.
+	AppendPRToNucleus func(nucleusID string, pr registry.PullRequest, repo, branch string) error
 	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
 	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
 	OpenNvimFile func(nucleusID, filePath string, line int) error
@@ -118,12 +126,20 @@ type Model struct {
 	branchAheadCommits []string
 
 	// neuron add state
-	neuronAddNucleusID  string
-	neuronAddCursor     int
-	neuronAddPhase      int             // 0 = type picker, 1 = repo+branch form (claude only)
-	neuronAddRepos      []string        // loaded when entering phase 1
-	neuronAddRepoCursor int
-	neuronAddBranch     textinput.Model // branch input for phase 1
+	neuronAddNucleusID   string
+	neuronAddCursor      int
+	neuronAddPhase       int             // 0=type, 1=repo, 2=branchMode, 3=branchDetail
+	neuronAddRepos       []string        // loaded when entering phase 1
+	neuronAddRepoCursor  int
+	neuronAddBranch      textinput.Model // branch name input (phase 3 new)
+	neuronAddBranchMode  int             // 0=new branch, 1=existing branch
+	neuronAddBaseBranches []string       // configured base branches for selected repo
+	neuronAddBaseCursor  int
+	neuronAddBaseChosen  bool            // true once base branch is selected
+	neuronAddSelectedBase string         // chosen base branch (for new branch flow)
+	neuronAddExisting    []string        // existing branches (loaded async for mode 1)
+	neuronAddFilter      string          // filter text for existing branch list
+	neuronAddExistCursor int
 
 	// PR add state
 	prAddNucleusID string
@@ -134,6 +150,18 @@ type Model struct {
 	githubPRCursor int
 	githubLoading  bool
 	githubErr      string
+
+	// github profile picker (shown when n is pressed on a PR and multiple profiles exist)
+	githubProfilePick    bool
+	githubProfileCursor  int
+	githubProfileNames   []string    // display names for the picker
+	githubPickerPendingPR github.PR // PR waiting for a profile selection or nucleus selection
+
+	// github nucleus picker (shown when a is pressed on a PR)
+	githubNucleusPick   bool
+	githubPickerFilter  string
+	githubPickerCursor  int
+	githubPickerNuclei  []registry.Nucleus
 
 	// github PR hover preview (right panel in stateGitHubView)
 	githubPreviewPR      *github.PRDetail // nil until loaded
@@ -242,6 +270,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = msg.err.Error()
 		} else {
 			m.nucleusModal = m.nucleusModal.SetProfiles(msg.names, msg.paths)
+			m.githubProfileNames = msg.names
 		}
 		return m, nil
 
@@ -382,6 +411,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case neuronAddBranchesLoadedMsg:
+		if msg.err == nil {
+			m.neuronAddExisting = msg.branches
+			m.neuronAddExistCursor = 0
+		}
+		return m, nil
+
 	case actionDoneMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
@@ -449,8 +485,20 @@ func (m Model) View() string {
 	case statePRAdd:
 		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewPRAdd())
 	case stateGitHubView:
+		if m.githubProfilePick {
+			return m.renderOverlay(m.viewGitHubView(), m.viewGitHubProfilePicker())
+		}
+		if m.githubNucleusPick {
+			return m.renderOverlay(m.viewGitHubView(), m.viewGitHubNucleusPicker())
+		}
 		return m.viewGitHubView()
 	case stateGitHubPRDetail:
+		if m.githubProfilePick {
+			return m.renderOverlay(m.viewGitHubPRDetail(), m.viewGitHubProfilePicker())
+		}
+		if m.githubNucleusPick {
+			return m.renderOverlay(m.viewGitHubPRDetail(), m.viewGitHubNucleusPicker())
+		}
 		return m.viewGitHubPRDetail()
 	case stateGitHubFilter:
 		return m.renderOverlay(m.viewGitHubView(), m.viewGitHubFilter())
@@ -492,12 +540,12 @@ func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, tea.Batch(cmd, func() tea.Msg {
-				return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.PR, sub.CreateWorktree)}
+				return actionDoneMsg{err: svc(sub.Task, sub.Profile, sub.PR, sub.Repo, sub.Branch)}
 			})
 		}
 		svc := m.services.CreateNucleus
 		return m, tea.Batch(cmd, func() tea.Msg {
-			return actionDoneMsg{err: svc(sub.Task, sub.JiraKey)}
+			return actionDoneMsg{err: svc(sub.Task, sub.JiraKey, sub.Profile)}
 		})
 	}
 
@@ -659,6 +707,18 @@ func (m Model) loadBranchesForModalCmd() tea.Cmd {
 	return func() tea.Msg {
 		branches, err := svc(repo)
 		return branchesLoadedMsg{branches: branches, err: err}
+	}
+}
+
+// loadNeuronAddBranchesCmd fetches existing branches for the neuron add existing-branch picker.
+func (m Model) loadNeuronAddBranchesCmd(repoPath string) tea.Cmd {
+	if m.services.ListBranches == nil {
+		return func() tea.Msg { return neuronAddBranchesLoadedMsg{} }
+	}
+	svc := m.services.ListBranches
+	return func() tea.Msg {
+		branches, err := svc(repoPath)
+		return neuronAddBranchesLoadedMsg{branches: branches, err: err}
 	}
 }
 

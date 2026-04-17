@@ -36,3 +36,7 @@ func (a *registryAdapter) RemoveNeuron(nucleusID, neuronID string) error {
 func (a *registryAdapter) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
 	return registry.UpdateNeuronTarget(a.path, nucleusID, neuronID, target)
 }
+
+func (a *registryAdapter) AddPullRequest(nucleusID string, pr registry.PullRequest) error {
+	return registry.AddPullRequest(a.path, nucleusID, pr)
+}

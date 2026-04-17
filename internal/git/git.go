@@ -34,11 +34,15 @@ func New(r Runner) *Git {
 }
 
 // AddWorktree creates a git worktree at worktreePath on branch.
-// If createBranch is true, the branch is created with -b; otherwise it is checked out directly.
-func (g *Git) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
+// If createBranch is true, the branch is created with -b; baseBranch sets the start point
+// (empty = current HEAD). If createBranch is false, the existing branch is checked out.
+func (g *Git) AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error {
 	var args []string
 	if createBranch {
 		args = []string{"-C", repoPath, "worktree", "add", "-b", branch, worktreePath}
+		if baseBranch != "" {
+			args = append(args, baseBranch)
+		}
 	} else {
 		args = []string{"-C", repoPath, "worktree", "add", worktreePath, branch}
 	}
@@ -106,7 +110,7 @@ func (g *Git) ListBranches(repoPath string) ([]string, error) {
 
 // CheckoutExisting adds a worktree for an existing branch without creating a new one.
 func (g *Git) CheckoutExisting(repoPath, worktreePath, branch string) error {
-	return g.AddWorktree(repoPath, worktreePath, branch, false)
+	return g.AddWorktree(repoPath, worktreePath, branch, false, "")
 }
 
 // Checkout switches the repo at repoPath to an existing branch.

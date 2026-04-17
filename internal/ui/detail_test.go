@@ -9,11 +9,11 @@ import (
 )
 
 // newDetailModel builds a Model loaded with sampleNuclei and the AddNeuron + GotoNeuron services.
-func newDetailModel(addNeuronFn func(nucleusID, neuronType, repoPath, branch string) error, gotoNeuronFn func(nucleusID, neuronID string) error) ui.Model {
+func newDetailModel(addNeuronFn func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error, gotoNeuronFn func(nucleusID, neuronID string) error) ui.Model {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -80,7 +80,7 @@ func TestNucleusDetail_NeuronCursorDown(t *testing.T) {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, jiraKey string) error { return nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -120,7 +120,7 @@ func TestNucleusDetail_NeuronCursorUp(t *testing.T) {
 	}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, jiraKey string) error { return nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -167,7 +167,7 @@ func TestNucleusDetail_GotoCallsGotoNeuron(t *testing.T) {
 // ── NeuronAdd overlay ─────────────────────────────────────────────────────────
 
 func TestNeuronAdd_OpenOnA(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	if m3.(ui.Model).State() != ui.StateNeuronAdd {
@@ -176,7 +176,7 @@ func TestNeuronAdd_OpenOnA(t *testing.T) {
 }
 
 func TestNeuronAdd_EscReturnsToDetail(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	m4, _ := pressSpecial(m3, tea.KeyEsc)
@@ -186,9 +186,10 @@ func TestNeuronAdd_EscReturnsToDetail(t *testing.T) {
 }
 
 func TestNeuronAdd_SelectTypeAndSubmit(t *testing.T) {
+	// Shell is the simplest path: type → repo → AddNeuron (no branch step).
 	var calledWith struct{ nucleusID, neuronType string }
 	m := newDetailModel(
-		func(nucleusID, neuronType, repoPath, branch string) error {
+		func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error {
 			calledWith.nucleusID = nucleusID
 			calledWith.neuronType = neuronType
 			return nil
@@ -196,18 +197,20 @@ func TestNeuronAdd_SelectTypeAndSubmit(t *testing.T) {
 		nil,
 	)
 	m2, _ := pressSpecial(m, tea.KeyEnter) // open detail
-	m3, _ := press(m2, "a")               // open neuron add
+	m3, _ := press(m2, "a")               // open neuron add (phase 0)
 	m4, _ := press(m3, "j")               // cursor to "nvim"
-	_, cmd := pressSpecial(m4, tea.KeyEnter)
+	m5, _ := press(m4, "j")               // cursor to "shell"
+	m6, _ := pressSpecial(m5, tea.KeyEnter) // advance to phase 1 (repo picker)
+	_, cmd := pressSpecial(m6, tea.KeyEnter) // select repo → calls AddNeuron for shell
 	if cmd == nil {
-		t.Fatal("expected cmd after enter in neuron add")
+		t.Fatal("expected cmd after repo selection for shell")
 	}
 	cmd()
 	if calledWith.nucleusID != "nucl1" {
 		t.Fatalf("expected nucleusID=nucl1, got %q", calledWith.nucleusID)
 	}
-	if calledWith.neuronType != "nvim" {
-		t.Fatalf("expected neuronType=nvim, got %q", calledWith.neuronType)
+	if calledWith.neuronType != "shell" {
+		t.Fatalf("expected neuronType=shell, got %q", calledWith.neuronType)
 	}
 }
 
@@ -225,7 +228,7 @@ func TestNucleusDetailDashboard_DoesNotPanic(t *testing.T) {
 }
 
 func TestNeuronAdd_ViewDoesNotPanic(t *testing.T) {
-	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch string) error { return nil }, nil)
+	m := newDetailModel(func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error { return nil }, nil)
 	m2, _ := pressSpecial(m, tea.KeyEnter)
 	m3, _ := press(m2, "a")
 	defer func() {

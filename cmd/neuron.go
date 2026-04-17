@@ -2,15 +2,19 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
 // executeAddNeuron adds a new Neuron of the given type to an existing Nucleus.
-// repoPath and branch are stored on the new neuron (empty = inherit primary neuron's workdir).
-// For claude neurons, claudeConfigDir sets the CLAUDE_CONFIG_DIR env var.
-func executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir string, reg nucleusSvc, tm tmuxSvc) error {
+// When branch is non-empty a git worktree is created at repoPath/.worktrees/<nucleusID>-<neuronID>.
+// createBranch=true creates a new branch (optionally from baseBranch); false checks out an existing one.
+// For claude neurons, CLAUDE_CONFIG_DIR is read from the nucleus's Profile field.
+func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
@@ -27,6 +31,15 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir s
 		workdir = repoPath
 	}
 
+	var worktreePath string
+	if branch != "" && repoPath != "" {
+		worktreePath = filepath.Join(repoPath, ".worktrees", nucleusID+"-"+neuronID)
+		if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, baseBranch); err != nil {
+			return fmt.Errorf("add worktree: %w", err)
+		}
+		workdir = worktreePath
+	}
+
 	target, err := tm.NewWindow(workdir, neuronType+"-"+nucleusID)
 	if err != nil {
 		return fmt.Errorf("tmux new-window: %w", err)
@@ -36,8 +49,8 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir s
 	switch registry.NeuronType(neuronType) {
 	case registry.NeuronClaude:
 		launchCmd = "claude"
-		if claudeConfigDir != "" {
-			launchCmd = "CLAUDE_CONFIG_DIR=" + claudeConfigDir + " claude"
+		if n.Profile != "" {
+			launchCmd = "CLAUDE_CONFIG_DIR=" + n.Profile + " claude"
 		}
 	case registry.NeuronNvim:
 		launchCmd = "nvim ."
@@ -51,16 +64,60 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, claudeConfigDir s
 	}
 
 	neuron := registry.Neuron{
-		ID:         neuronID,
-		Type:       registry.NeuronType(neuronType),
-		TmuxTarget: target,
-		Profile:    claudeConfigDir,
-		Status:     "idle",
-		RepoPath:   repoPath,
-		Branch:     branch,
+		ID:           neuronID,
+		Type:         registry.NeuronType(neuronType),
+		TmuxTarget:   target,
+		Status:       "idle",
+		RepoPath:     repoPath,
+		WorktreePath: worktreePath,
+		Branch:       branch,
 	}
 
 	return reg.AddNeuron(nucleusID, neuron)
+}
+
+// executeAppendPRNeuron adds an nvim neuron to an existing nucleus and links a PR.
+// It checks out the existing branch (createBranch=false) into a dedicated worktree.
+func executeAppendPRNeuron(nucleusID, repoPath, branch string, pr registry.PullRequest, reg nucleusSvc, gt gitSvc, tm tmuxSvc, _ io.Writer) error {
+	r, err := reg.Load()
+	if err != nil {
+		return err
+	}
+	n, err := r.FindByID(nucleusID)
+	if err != nil {
+		return err
+	}
+
+	neuronID := nextNeuronID(n.Neurons, string(registry.NeuronNvim))
+
+	worktreePath := filepath.Join(repoPath, ".worktrees", nucleusID+"-pr"+strconv.Itoa(pr.Number))
+	if err := gt.AddWorktree(repoPath, worktreePath, branch, false, ""); err != nil {
+		return fmt.Errorf("add worktree: %w", err)
+	}
+
+	windowName := "PR#" + strconv.Itoa(pr.Number)
+	target, err := tm.NewWindow(worktreePath, windowName)
+	if err != nil {
+		return fmt.Errorf("tmux new-window: %w", err)
+	}
+
+	if err := tm.SendKeys(target, "nvim ."); err != nil {
+		fmt.Printf("warning: could not launch nvim: %v\n", err)
+	}
+
+	neuron := registry.Neuron{
+		ID:           neuronID,
+		Type:         registry.NeuronNvim,
+		TmuxTarget:   target,
+		Status:       "idle",
+		RepoPath:     repoPath,
+		WorktreePath: worktreePath,
+		Branch:       branch,
+	}
+	if err := reg.AddNeuron(nucleusID, neuron); err != nil {
+		return err
+	}
+	return reg.AddPullRequest(nucleusID, pr)
 }
 
 // nextNeuronID generates the next unique ID for a new neuron of the given type

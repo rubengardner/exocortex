@@ -25,7 +25,7 @@ func TestAddWorktree_Args(t *testing.T) {
 	r := &captureRunner{}
 	g := git.New(r)
 
-	err := g.AddWorktree("/repo", "/repo/.worktrees/abc123", "feat/abc123", true)
+	err := g.AddWorktree("/repo", "/repo/.worktrees/abc123", "feat/abc123", true, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -39,11 +39,26 @@ func TestAddWorktree_Args(t *testing.T) {
 	}
 }
 
+func TestAddWorktree_WithBaseBranch_Args(t *testing.T) {
+	r := &captureRunner{}
+	g := git.New(r)
+
+	err := g.AddWorktree("/repo", "/repo/.worktrees/abc123", "feat/new", true, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// When creating with a base branch: git -C <repo> worktree add -b <branch> <path> <base>
+	want := []string{"-C", "/repo", "worktree", "add", "-b", "feat/new", "/repo/.worktrees/abc123", "main"}
+	if !equalSlice(r.args, want) {
+		t.Fatalf("args mismatch\n got:  %v\n want: %v", r.args, want)
+	}
+}
+
 func TestAddWorktree_ExistingBranch_Args(t *testing.T) {
 	r := &captureRunner{}
 	g := git.New(r)
 
-	err := g.AddWorktree("/repo", "/repo/.worktrees/abc123", "feat/abc123", false)
+	err := g.AddWorktree("/repo", "/repo/.worktrees/abc123", "feat/abc123", false, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +73,7 @@ func TestAddWorktree_PropagatesError(t *testing.T) {
 	r := &captureRunner{err: errors.New("exit 128")}
 	g := git.New(r)
 
-	err := g.AddWorktree("/repo", "/repo/.worktrees/x", "feat/x", true)
+	err := g.AddWorktree("/repo", "/repo/.worktrees/x", "feat/x", true, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

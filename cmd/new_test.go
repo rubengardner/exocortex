@@ -60,6 +60,8 @@ func (f *fakeRegistry) UpdateNeuronTarget(nucleusID, neuronID, target string) er
 	f.updatedNeuronTarget = target
 	return nil
 }
+func (f *fakeRegistry) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 // ── shared fake git ────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ type fakeGit struct {
 	checkoutErr    error
 }
 
-func (g *fakeGit) AddWorktree(repoPath, worktreePath, branch string, createBranch bool) error {
+func (g *fakeGit) AddWorktree(repoPath, worktreePath, branch string, createBranch bool, baseBranch string) error {
 	g.addCalled = true
 	g.createBranch = createBranch
 	return g.addErr

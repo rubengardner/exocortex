@@ -68,7 +68,7 @@ func TestGitHubConfig_EmptyTeammates_OmittedFromJSON(t *testing.T) {
 // ── GitHubRepoNames ───────────────────────────────────────────────────────────
 
 func TestGitHubRepoNames_NilGitHub(t *testing.T) {
-	cfg := &config.Config{Repos: []string{"/path/to/repo"}}
+	cfg := &config.Config{Repos: []config.RepoConfig{{Path: "/path/to/repo"}}}
 	if cfg.GitHubRepoNames() != nil {
 		t.Error("want nil when GitHub is nil")
 	}
@@ -76,7 +76,7 @@ func TestGitHubRepoNames_NilGitHub(t *testing.T) {
 
 func TestGitHubRepoNames_EmptyOrg(t *testing.T) {
 	cfg := &config.Config{
-		Repos:  []string{"/path/to/badger-go"},
+		Repos:  []config.RepoConfig{{Path: "/path/to/badger-go"}},
 		GitHub: &config.GitHubConfig{Token: "tok"},
 	}
 	if cfg.GitHubRepoNames() != nil {
@@ -95,10 +95,10 @@ func TestGitHubRepoNames_EmptyRepos(t *testing.T) {
 
 func TestGitHubRepoNames_DerivedFromPaths(t *testing.T) {
 	cfg := &config.Config{
-		Repos: []string{
-			"/Users/ruben/projects/badger-go",
-			"/Users/ruben/projects/badger-messenger",
-			"/Users/ruben/projects/there_geocoding",
+		Repos: []config.RepoConfig{
+			{Path: "/Users/ruben/projects/badger-go"},
+			{Path: "/Users/ruben/projects/badger-messenger"},
+			{Path: "/Users/ruben/projects/there_geocoding"},
 		},
 		GitHub: &config.GitHubConfig{Token: "tok", Org: "BadgerMaps"},
 	}
@@ -120,7 +120,7 @@ func TestGitHubRepoNames_DerivedFromPaths(t *testing.T) {
 
 func TestGitHubRepoNames_TrailingSlash(t *testing.T) {
 	cfg := &config.Config{
-		Repos:  []string{"/path/to/badger-go/"},
+		Repos:  []config.RepoConfig{{Path: "/path/to/badger-go/"}},
 		GitHub: &config.GitHubConfig{Token: "tok", Org: "BadgerMaps"},
 	}
 	got := cfg.GitHubRepoNames()
@@ -146,7 +146,9 @@ func TestLoad_Save_RoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "config.json")
 
 	original := &config.Config{
-		Repos: []string{"/path/to/repo"},
+		Repos: []config.RepoConfig{
+			{Path: "/path/to/repo", BaseBranches: []string{"main", "development"}},
+		},
 		GitHub: &config.GitHubConfig{
 			Token:     "ghp_test",
 			Org:       "BadgerMaps",
@@ -173,6 +175,15 @@ func TestLoad_Save_RoundTrip(t *testing.T) {
 	if len(loaded.GitHub.Teammates) != 1 || loaded.GitHub.Teammates[0] != "alice" {
 		t.Errorf("Teammates: got %v, want [alice]", loaded.GitHub.Teammates)
 	}
+	if len(loaded.Repos) != 1 {
+		t.Fatalf("Repos len: got %d, want 1", len(loaded.Repos))
+	}
+	if loaded.Repos[0].Path != "/path/to/repo" {
+		t.Errorf("Repos[0].Path: got %q, want '/path/to/repo'", loaded.Repos[0].Path)
+	}
+	if len(loaded.Repos[0].BaseBranches) != 2 {
+		t.Errorf("Repos[0].BaseBranches: got %v, want [main development]", loaded.Repos[0].BaseBranches)
+	}
 }
 
 func TestSave_CreatesParentDir(t *testing.T) {
@@ -184,5 +195,70 @@ func TestSave_CreatesParentDir(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("file not created: %v", err)
+	}
+}
+
+// ── Migration ─────────────────────────────────────────────────────────────────
+
+func TestLoad_StringReposMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Write legacy format with repos as plain strings.
+	legacy := `{"repos":["/path/to/repo-a","/path/to/repo-b"],"profiles":{"work":"~/.claude-work"}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(cfg.Repos) != 2 {
+		t.Fatalf("Repos len: got %d, want 2", len(cfg.Repos))
+	}
+	if cfg.Repos[0].Path != "/path/to/repo-a" {
+		t.Errorf("Repos[0].Path: got %q, want '/path/to/repo-a'", cfg.Repos[0].Path)
+	}
+	if cfg.Repos[1].Path != "/path/to/repo-b" {
+		t.Errorf("Repos[1].Path: got %q, want '/path/to/repo-b'", cfg.Repos[1].Path)
+	}
+	if cfg.Repos[0].BaseBranches != nil {
+		t.Errorf("Repos[0].BaseBranches: got %v, want nil", cfg.Repos[0].BaseBranches)
+	}
+	// Other fields should still be parsed correctly.
+	if cfg.Profiles["work"] != "~/.claude-work" {
+		t.Errorf("Profiles[work]: got %q, want '~/.claude-work'", cfg.Profiles["work"])
+	}
+}
+
+func TestLoad_RepoConfigRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	original := &config.Config{
+		Repos: []config.RepoConfig{
+			{Path: "/abs/repo", BaseBranches: []string{"main", "hotfix"}},
+		},
+	}
+	if err := config.Save(path, original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.Repos) != 1 {
+		t.Fatalf("Repos len: got %d, want 1", len(loaded.Repos))
+	}
+	if loaded.Repos[0].Path != "/abs/repo" {
+		t.Errorf("Path: got %q", loaded.Repos[0].Path)
+	}
+	if len(loaded.Repos[0].BaseBranches) != 2 ||
+		loaded.Repos[0].BaseBranches[0] != "main" ||
+		loaded.Repos[0].BaseBranches[1] != "hotfix" {
+		t.Errorf("BaseBranches: got %v, want [main hotfix]", loaded.Repos[0].BaseBranches)
 	}
 }

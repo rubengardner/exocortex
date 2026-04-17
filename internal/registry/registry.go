@@ -29,7 +29,7 @@ func DefaultPath() string {
 func Load(path string) (*Registry, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Registry{Version: 3}, nil
+		return &Registry{Version: 4}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("registry: read %s: %w", path, err)
@@ -45,6 +45,8 @@ func Load(path string) (*Registry, error) {
 		return migrateV1(data)
 	case 2:
 		return migrateV2(data)
+	case 3:
+		return migrateV3(data)
 	}
 
 	var r Registry
@@ -60,7 +62,7 @@ func Save(path string, r *Registry) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
-	r.Version = 3 // always write as v3
+	r.Version = 4 // always write as v4
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return fmt.Errorf("registry: marshal: %w", err)
@@ -239,19 +241,21 @@ type registryV1 struct {
 	Agents []agentV1 `json:"agents"`
 }
 
-// migrateV1 converts a v1 JSON blob directly to a v3 Registry.
+// migrateV1 converts a v1 JSON blob directly to a v4 Registry.
 // Each Agent becomes a Nucleus; repo/worktree/branch land on the Claude Neuron.
+// Profile moves from the agent-level field to Nucleus.Profile.
 func migrateV1(data []byte) (*Registry, error) {
 	var v1 registryV1
 	if err := json.Unmarshal(data, &v1); err != nil {
 		return nil, fmt.Errorf("registry: parse v1: %w", err)
 	}
 
-	r := &Registry{Version: 3, Nuclei: make([]Nucleus, 0, len(v1.Agents))}
+	r := &Registry{Version: 4, Nuclei: make([]Nucleus, 0, len(v1.Agents))}
 	for _, a := range v1.Agents {
 		n := Nucleus{
 			ID:              a.ID,
 			TaskDescription: a.TaskDescription,
+			Profile:         a.Profile, // moved from Neuron to Nucleus
 			Status:          a.Status,
 			CreatedAt:       a.CreatedAt,
 		}
@@ -260,7 +264,6 @@ func migrateV1(data []byte) (*Registry, error) {
 			ID:           "c1",
 			Type:         NeuronClaude,
 			TmuxTarget:   a.TmuxTarget,
-			Profile:      a.Profile,
 			Status:       a.Status,
 			RepoPath:     a.RepoPath,
 			WorktreePath: a.WorktreePath,
@@ -285,36 +288,49 @@ func migrateV1(data []byte) (*Registry, error) {
 
 // ── v2 migration ──────────────────────────────────────────────────────────────
 
+// neuronV2 preserves the Profile field that existed on Neuron in registry v2.
+type neuronV2 struct {
+	ID           string     `json:"id"`
+	Type         NeuronType `json:"type"`
+	TmuxTarget   string     `json:"tmux_target"`
+	Profile      string     `json:"profile,omitempty"`
+	Status       string     `json:"status"`
+	RepoPath     string     `json:"repo_path,omitempty"`
+	WorktreePath string     `json:"worktree_path,omitempty"`
+	Branch       string     `json:"branch,omitempty"`
+}
+
 // nucleusV2 matches the legacy Nucleus struct (version 2) for JSON unmarshalling.
 type nucleusV2 struct {
-	ID              string    `json:"id"`
-	RepoPath        string    `json:"repo_path"`
-	WorktreePath    string    `json:"worktree_path"`
-	Branch          string    `json:"branch"`
-	TaskDescription string    `json:"task_description"`
-	JiraKey         string    `json:"jira_key,omitempty"`
-	PRNumber        int       `json:"pr_number,omitempty"`
-	PRRepo          string    `json:"pr_repo,omitempty"`
-	Neurons         []Neuron  `json:"neurons"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string      `json:"id"`
+	RepoPath        string      `json:"repo_path"`
+	WorktreePath    string      `json:"worktree_path"`
+	Branch          string      `json:"branch"`
+	TaskDescription string      `json:"task_description"`
+	JiraKey         string      `json:"jira_key,omitempty"`
+	PRNumber        int         `json:"pr_number,omitempty"`
+	PRRepo          string      `json:"pr_repo,omitempty"`
+	Neurons         []neuronV2  `json:"neurons"`
+	Status          string      `json:"status"`
+	CreatedAt       time.Time   `json:"created_at"`
 }
 
 type registryV2 struct {
-	Version int        `json:"version"`
+	Version int         `json:"version"`
 	Nuclei  []nucleusV2 `json:"nuclei"`
 }
 
-// migrateV2 converts a v2 JSON blob to a v3 Registry.
+// migrateV2 converts a v2 JSON blob to a v4 Registry.
 // Repo/worktree/branch are moved from each Nucleus onto its primary Claude Neuron.
 // A single PRNumber/PRRepo becomes PullRequests[0].
+// Profile is moved from the primary Claude neuron to Nucleus.Profile.
 func migrateV2(data []byte) (*Registry, error) {
 	var v2 registryV2
 	if err := json.Unmarshal(data, &v2); err != nil {
 		return nil, fmt.Errorf("registry: parse v2: %w", err)
 	}
 
-	r := &Registry{Version: 3, Nuclei: make([]Nucleus, 0, len(v2.Nuclei))}
+	r := &Registry{Version: 4, Nuclei: make([]Nucleus, 0, len(v2.Nuclei))}
 	for _, n2 := range v2.Nuclei {
 		n := Nucleus{
 			ID:              n2.ID,
@@ -324,24 +340,37 @@ func migrateV2(data []byte) (*Registry, error) {
 			CreatedAt:       n2.CreatedAt,
 		}
 
+		// Convert shadow neurons to current Neuron type.
 		neurons := make([]Neuron, len(n2.Neurons))
-		copy(neurons, n2.Neurons)
+		for i, sn := range n2.Neurons {
+			neurons[i] = Neuron{
+				ID:           sn.ID,
+				Type:         sn.Type,
+				TmuxTarget:   sn.TmuxTarget,
+				Status:       sn.Status,
+				RepoPath:     sn.RepoPath,
+				WorktreePath: sn.WorktreePath,
+				Branch:       sn.Branch,
+			}
+		}
 
 		// Find the primary Claude neuron to attach repo/worktree/branch to.
 		primaryIdx := -1
-		for i, neu := range neurons {
+		for i, neu := range n2.Neurons {
 			if neu.Type == NeuronClaude {
 				primaryIdx = i
 				break
 			}
 		}
-		if primaryIdx == -1 && len(neurons) > 0 {
+		if primaryIdx == -1 && len(n2.Neurons) > 0 {
 			primaryIdx = 0
 		}
 		if primaryIdx >= 0 {
 			neurons[primaryIdx].RepoPath = n2.RepoPath
 			neurons[primaryIdx].WorktreePath = n2.WorktreePath
 			neurons[primaryIdx].Branch = n2.Branch
+			// Move Profile from primary neuron to Nucleus.
+			n.Profile = n2.Neurons[primaryIdx].Profile
 		}
 		n.Neurons = neurons
 
@@ -349,6 +378,80 @@ func migrateV2(data []byte) (*Registry, error) {
 			n.PullRequests = []PullRequest{{Number: n2.PRNumber, Repo: n2.PRRepo}}
 		}
 
+		r.Nuclei = append(r.Nuclei, n)
+	}
+	return r, nil
+}
+
+// ── v3 migration ──────────────────────────────────────────────────────────────
+
+// neuronV3 preserves the Profile field that existed on Neuron in registry v3.
+type neuronV3 struct {
+	ID           string     `json:"id"`
+	Type         NeuronType `json:"type"`
+	TmuxTarget   string     `json:"tmux_target"`
+	Profile      string     `json:"profile,omitempty"`
+	Status       string     `json:"status"`
+	RepoPath     string     `json:"repo_path,omitempty"`
+	WorktreePath string     `json:"worktree_path,omitempty"`
+	Branch       string     `json:"branch,omitempty"`
+}
+
+// nucleusV3 matches the v3 Nucleus struct for JSON unmarshalling.
+type nucleusV3 struct {
+	ID              string        `json:"id"`
+	TaskDescription string        `json:"task_description"`
+	JiraKey         string        `json:"jira_key,omitempty"`
+	Profile         string        `json:"profile,omitempty"` // may already be set in late v3 files
+	PullRequests    []PullRequest `json:"pull_requests,omitempty"`
+	Neurons         []neuronV3    `json:"neurons"`
+	Status          string        `json:"status"`
+	CreatedAt       time.Time     `json:"created_at"`
+}
+
+type registryV3 struct {
+	Version int        `json:"version"`
+	Nuclei  []nucleusV3 `json:"nuclei"`
+}
+
+// migrateV3 converts a v3 JSON blob to a v4 Registry.
+// Profile is moved from the primary Claude neuron to Nucleus.Profile when not
+// already set at the nucleus level.
+func migrateV3(data []byte) (*Registry, error) {
+	var v3 registryV3
+	if err := json.Unmarshal(data, &v3); err != nil {
+		return nil, fmt.Errorf("registry: parse v3: %w", err)
+	}
+
+	r := &Registry{Version: 4, Nuclei: make([]Nucleus, 0, len(v3.Nuclei))}
+	for _, n3 := range v3.Nuclei {
+		n := Nucleus{
+			ID:              n3.ID,
+			TaskDescription: n3.TaskDescription,
+			JiraKey:         n3.JiraKey,
+			Profile:         n3.Profile,
+			PullRequests:    n3.PullRequests,
+			Status:          n3.Status,
+			CreatedAt:       n3.CreatedAt,
+		}
+
+		neurons := make([]Neuron, len(n3.Neurons))
+		for i, sn := range n3.Neurons {
+			neurons[i] = Neuron{
+				ID:           sn.ID,
+				Type:         sn.Type,
+				TmuxTarget:   sn.TmuxTarget,
+				Status:       sn.Status,
+				RepoPath:     sn.RepoPath,
+				WorktreePath: sn.WorktreePath,
+				Branch:       sn.Branch,
+			}
+			// Promote Profile from primary Claude neuron to nucleus if not set.
+			if n.Profile == "" && sn.Type == NeuronClaude && sn.Profile != "" {
+				n.Profile = sn.Profile
+			}
+		}
+		n.Neurons = neurons
 		r.Nuclei = append(r.Nuclei, n)
 	}
 	return r, nil

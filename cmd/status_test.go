@@ -30,6 +30,8 @@ func (f *fakeRegistryStatus) RemoveNeuron(nucleusID, neuronID string) error { re
 func (f *fakeRegistryStatus) UpdateNeuronTarget(nucleusID, neuronID, target string) error {
 	return nil
 }
+func (f *fakeRegistryStatus) AddPullRequest(nucleusID string, pr registry.PullRequest) error { return nil }
+
 
 func TestStatusCmd_UpdatesRegistry(t *testing.T) {
 	reg := &fakeRegistryStatus{}

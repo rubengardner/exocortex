@@ -21,7 +21,6 @@ type Neuron struct {
 	ID           string     `json:"id"`
 	Type         NeuronType `json:"type"`
 	TmuxTarget   string     `json:"tmux_target"`
-	Profile      string     `json:"profile,omitempty"`      // CLAUDE_CONFIG_DIR path (claude neurons only)
 	Status       string     `json:"status"`
 	RepoPath     string     `json:"repo_path,omitempty"`     // absolute path to git repo root
 	WorktreePath string     `json:"worktree_path,omitempty"` // absolute path to git worktree (empty = repo root)
@@ -51,6 +50,7 @@ type Nucleus struct {
 	ID              string        `json:"id"`
 	TaskDescription string        `json:"task_description"`
 	JiraKey         string        `json:"jira_key,omitempty"`
+	Profile         string        `json:"profile,omitempty"` // CLAUDE_CONFIG_DIR path; inherited by all Claude neurons
 	PullRequests    []PullRequest `json:"pull_requests,omitempty"`
 	Neurons         []Neuron      `json:"neurons"`
 	Status          string        `json:"status"`

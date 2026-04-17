@@ -16,7 +16,7 @@ import (
 func newTestModel(nuclei []registry.Nucleus) ui.Model {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -33,7 +33,7 @@ func newTestModel(nuclei []registry.Nucleus) ui.Model {
 func nucleiLoaded(nuclei []registry.Nucleus) tea.Msg {
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -150,7 +150,7 @@ func TestNvim_CallsOpenNvim(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { calledID = id; return nil },
@@ -174,7 +174,7 @@ func TestNvimError_SetsLastErr(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return errors.New("nvim gone") },
@@ -238,7 +238,7 @@ func TestDelete_ConfirmCallsRemove(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { removed = id; return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -279,7 +279,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 	rec := &reviewRecord{}
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus: func(task, jiraKey string) error { return nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -287,7 +287,7 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 		ListBranches: func(_ string) ([]string, error) {
 			return []string{"main", pr.branch}, nil
 		},
-		CreateReviewNucleus: func(task, repo, branch, profile string, pr registry.PullRequest, createWorktree bool) error {
+		CreateReviewNucleus: func(task, profile string, pr registry.PullRequest, repo, branch string) error {
 			rec.branch = branch
 			rec.prNumber = pr.Number
 			rec.prRepo = pr.Repo
@@ -326,42 +326,52 @@ func TestReview_StateBranchSearchIsExported(t *testing.T) {
 	}
 }
 
-func TestReview_RKeyInGitHubView_TransitionsToBranchSearch(t *testing.T) {
+func TestReview_NKeyInGitHubView_CallsCreateReviewDirectly(t *testing.T) {
+	// With no profiles configured, n fires CreateReviewNucleus immediately.
 	nuclei := sampleNuclei()
-	svc, _ := newReviewSvc(nuclei, samplePR{number: 42, repo: "owner/repo", branch: "feat/oauth"})
+	svc, rec := newReviewSvc(nuclei, samplePR{number: 42, repo: "owner/repo", branch: "feat/oauth"})
 	m := ui.New(svc)
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
 
-	// G → StateGitHubView + load PRs
 	m4 := enterGitHubViewWithPRs(m3)
 	if m4.(ui.Model).State() != ui.StateGitHubView {
 		t.Fatalf("expected StateGitHubView, got %v", m4.(ui.Model).State())
 	}
 
-	// R → review workflow; no repo picker → state becomes StateBranchSearch immediately
-	m5, _ := press(m4, "R")
-	if m5.(ui.Model).State() != ui.StateBranchSearch {
-		t.Fatalf("expected StateBranchSearch after R, got %v", m5.(ui.Model).State())
+	// n → directly calls CreateReviewNucleus (no profiles = no picker)
+	m5, cmd := press(m4, "n")
+	if m5.(ui.Model).State() != ui.StateGitHubView {
+		t.Fatalf("expected StateGitHubView after n (no profiles), got %v", m5.(ui.Model).State())
+	}
+	if cmd == nil {
+		t.Fatal("expected cmd after n")
+	}
+	cmd()
+	if rec.prNumber != 42 {
+		t.Fatalf("expected prNumber=42, got %d", rec.prNumber)
 	}
 }
 
-func TestReview_BranchSearchEscReturnsToList(t *testing.T) {
+func TestReview_ProfilePickerEscReturnsToGitHubView(t *testing.T) {
+	// With multiple profiles, n opens the profile picker; esc closes it.
 	nuclei := sampleNuclei()
 	svc, _ := newReviewSvc(nuclei, samplePR{number: 1, repo: "a/b", branch: "feat/foo"})
+	// Inject profile names by firing a profilesLoadedMsg.
 	m := ui.New(svc)
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
-
 	m4 := enterGitHubViewWithPRs(m3)
-	m5, _ := press(m4, "R") // → StateNucleusModal (prevState = StateGitHubView)
-	m6, _ := pressSpecial(m5, tea.KeyEsc)
-	if m6.(ui.Model).State() != ui.StateGitHubView {
-		t.Fatalf("expected StateGitHubView after esc from modal, got %v", m6.(ui.Model).State())
+	// Simulate profiles loaded with 2 profiles.
+	m5, _ := m4.Update(ui.ProfilesLoadedMsg([]string{"work", "personal"}))
+	m6, _ := press(m5, "n") // → opens profile picker
+	m7, _ := pressSpecial(m6, tea.KeyEsc)
+	if m7.(ui.Model).State() != ui.StateGitHubView {
+		t.Fatalf("expected StateGitHubView after esc from profile picker, got %v", m7.(ui.Model).State())
 	}
 }
 
-func TestReview_BranchSearchEnterCallsCreateReviewNucleus(t *testing.T) {
+func TestReview_NKeyCallsCreateReviewNucleusWithPR(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc, rec := newReviewSvc(nuclei, samplePR{number: 7, repo: "org/repo", branch: "feat/oauth"})
 	m := ui.New(svc)
@@ -369,17 +379,12 @@ func TestReview_BranchSearchEnterCallsCreateReviewNucleus(t *testing.T) {
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
 
 	m4 := enterGitHubViewWithPRs(m3)
-	m5, branchCmd := press(m4, "R") // → StateNucleusModal + BatchMsg
-	// Drain the BatchMsg: fires textinput.Blink + loads branches into the modal.
-	m5 = drainCmd(m5, branchCmd)
-
-	// Enter submits the pre-filled form and fires CreateReviewNucleus.
-	m6, cmd := pressSpecial(m5, tea.KeyEnter)
+	// n → directly fires CreateReviewNucleus (no profiles)
+	_, cmd := press(m4, "n")
 	if cmd == nil {
-		t.Fatal("expected cmd after enter in nucleus modal")
+		t.Fatal("expected cmd after n")
 	}
-	// Execute the cmd chain — this calls CreateReviewNucleus and populates rec.
-	drainCmd(m6, cmd)
+	cmd()
 
 	if rec.prNumber != 7 {
 		t.Fatalf("expected prNumber=7, got %d", rec.prNumber)
@@ -392,21 +397,21 @@ func TestReview_BranchSearchEnterCallsCreateReviewNucleus(t *testing.T) {
 	}
 }
 
-func TestReview_BranchSearchView_DoesNotPanic(t *testing.T) {
+func TestReview_ProfilePickerView_DoesNotPanic(t *testing.T) {
 	nuclei := sampleNuclei()
 	svc, _ := newReviewSvc(nuclei, samplePR{number: 5, repo: "x/y", branch: "main"})
 	m := ui.New(svc)
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
-
 	m4 := enterGitHubViewWithPRs(m3)
-	m5, _ := press(m4, "R")
+	m5, _ := m4.Update(ui.ProfilesLoadedMsg([]string{"work"}))
+	m6, _ := press(m5, "n")
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("View() panicked in StateBranchSearch: %v", r)
+			t.Fatalf("View() panicked during profile pick: %v", r)
 		}
 	}()
-	_ = m5.(ui.Model).View()
+	_ = m6.(ui.Model).View()
 }
 
 // ── view smoke tests ──────────────────────────────────────────────────────────
@@ -429,4 +434,112 @@ func TestView_EmptyNuclei_DoesNotPanic(t *testing.T) {
 		}
 	}()
 	_ = m.View()
+}
+
+// ── Phase F: AppendPRToNucleus / nucleus picker ────────────────────────────────
+
+func TestAppend_AKeyOpenNucleusPicker(t *testing.T) {
+	nuclei := sampleNuclei()
+	var appendCalled bool
+	svc := ui.Services{
+		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
+		RemoveNucleus: func(id string) error { return nil },
+		GotoNucleus:   func(id string) error { return nil },
+		OpenNvim:      func(id string) error { return nil },
+		AppendPRToNucleus: func(nucleusID string, pr registry.PullRequest, repo, branch string) error {
+			appendCalled = true
+			return nil
+		},
+		LoadGitHubPRs: func(_ github.PRFilter) ([]github.PR, error) {
+			return []github.PR{{Number: 10, Repo: "org/repo", Branch: "feat/x", State: "open"}}, nil
+		},
+	}
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+	m4 := enterGitHubViewWithPRs(m3)
+
+	// `a` → opens nucleus picker (doesn't fire AppendPRToNucleus yet)
+	m5, cmd := press(m4, "a")
+	if cmd != nil {
+		cmd()
+	}
+	if appendCalled {
+		t.Fatal("AppendPRToNucleus must not be called until nucleus is selected")
+	}
+	// The nucleus picker should be open — verify View doesn't panic.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("View() panicked with nucleus picker open: %v", r)
+		}
+	}()
+	_ = m5.(ui.Model).View()
+}
+
+func TestAppend_EnterInPickerFiresAppend(t *testing.T) {
+	nuclei := sampleNuclei()
+	var capturedNucleusID string
+	var capturedPRNumber int
+	svc := ui.Services{
+		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
+		RemoveNucleus: func(id string) error { return nil },
+		GotoNucleus:   func(id string) error { return nil },
+		OpenNvim:      func(id string) error { return nil },
+		AppendPRToNucleus: func(nucleusID string, pr registry.PullRequest, repo, branch string) error {
+			capturedNucleusID = nucleusID
+			capturedPRNumber = pr.Number
+			return nil
+		},
+		LoadGitHubPRs: func(_ github.PRFilter) ([]github.PR, error) {
+			return []github.PR{{Number: 99, Repo: "org/repo", Branch: "feat/x", State: "open"}}, nil
+		},
+	}
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+	m4 := enterGitHubViewWithPRs(m3)
+
+	m5, _ := press(m4, "a") // open nucleus picker
+	m6, cmd := pressSpecial(m5, tea.KeyEnter) // select first nucleus
+	_ = m6
+	if cmd == nil {
+		t.Fatal("expected cmd after enter in nucleus picker")
+	}
+	cmd() // execute AppendPRToNucleus
+
+	if capturedPRNumber != 99 {
+		t.Fatalf("expected prNumber=99, got %d", capturedPRNumber)
+	}
+	if capturedNucleusID == "" {
+		t.Fatal("expected nucleusID to be set")
+	}
+}
+
+func TestAppend_EscClosesPicker(t *testing.T) {
+	nuclei := sampleNuclei()
+	svc := ui.Services{
+		LoadNuclei:    func() ([]registry.Nucleus, error) { return nuclei, nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
+		RemoveNucleus: func(id string) error { return nil },
+		GotoNucleus:   func(id string) error { return nil },
+		OpenNvim:      func(id string) error { return nil },
+		AppendPRToNucleus: func(nucleusID string, pr registry.PullRequest, repo, branch string) error {
+			return nil
+		},
+		LoadGitHubPRs: func(_ github.PRFilter) ([]github.PR, error) {
+			return []github.PR{{Number: 1, Repo: "org/repo", Branch: "b", State: "open"}}, nil
+		},
+	}
+	m := ui.New(svc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m3, _ := m2.Update(nucleiLoaded(nuclei))
+	m4 := enterGitHubViewWithPRs(m3)
+
+	m5, _ := press(m4, "a")         // open picker
+	m6, _ := pressSpecial(m5, tea.KeyEsc) // close picker
+	if m6.(ui.Model).State() != ui.StateGitHubView {
+		t.Fatalf("expected StateGitHubView after esc, got %v", m6.(ui.Model).State())
+	}
 }

@@ -226,7 +226,7 @@ func (m NucleusModal) SelectedRepo() string {
 }
 
 // visibleFields returns the ordered list of fields shown in the modal, based on
-// mode and available repos/profiles. Develop mode only shows Mode + Task.
+// mode and available repos/profiles.
 func (m NucleusModal) visibleFields() []ModalField {
 	fields := []ModalField{ModalFieldMode}
 	if m.mode == ModeReview {
@@ -237,6 +237,11 @@ func (m NucleusModal) visibleFields() []ModalField {
 			fields = append(fields, ModalFieldProfile)
 		}
 		fields = append(fields, ModalFieldBranch, ModalFieldWorktree)
+	} else {
+		// Develop mode: profile selection applies to the nucleus itself.
+		if len(m.profileNames) > 0 {
+			fields = append(fields, ModalFieldProfile)
+		}
 	}
 	fields = append(fields, ModalFieldTask)
 	return fields

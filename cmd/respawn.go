@@ -54,12 +54,12 @@ func executeRespawn(id string, reg nucleusSvc, tm tmuxSvc, out io.Writer) error 
 		return fmt.Errorf("tmux new-window: %w", err)
 	}
 
-	// Resolve the profile stored on the primary neuron to a CLAUDE_CONFIG_DIR path.
+	// Resolve the profile stored on the nucleus to a CLAUDE_CONFIG_DIR path.
 	claudeCmd := "claude"
-	if primary.Profile != "" {
+	if nucleus.Profile != "" {
 		cfg, cfgErr := iconfig.Load(iconfig.DefaultPath())
 		if cfgErr == nil {
-			if path, ok := cfg.Profiles[primary.Profile]; ok && path != "" {
+			if path, ok := cfg.Profiles[nucleus.Profile]; ok && path != "" {
 				claudeCmd = "CLAUDE_CONFIG_DIR=" + path + " claude"
 			}
 		}

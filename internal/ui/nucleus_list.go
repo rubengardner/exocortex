@@ -149,18 +149,19 @@ func (m Model) viewNucleusList(width int) string {
 	}
 	var sb strings.Builder
 	for i, n := range m.nuclei {
-		dot := StatusDot(n.Status)
+		dots := claudeNeuronDots(n)
+		dotsPlain := claudeNeuronDotsPlain(n)
 		badges := nucleusBadges(n)
 		// Reserve space for badges (each badge is max 10 chars) + age (4) + separators.
 		badgesPlain := nucleusBadgesPlain(n) // plain text width for layout math
-		taskWidth := width - 10 - len(badgesPlain)
+		taskWidth := width - 10 - len(badgesPlain) - (len(dotsPlain) - 1)
 		if taskWidth < 8 {
 			taskWidth = 8
 		}
 		task := truncate(n.TaskDescription, taskWidth)
 		age := fmtAge(n.CreatedAt)
 
-		line1 := fmt.Sprintf(" %s %-*s", dot, width-10, task)
+		line1 := fmt.Sprintf(" %s %-*s", dots, width-10, task)
 		meta := fmt.Sprintf("   %s  %s", n.ID, age)
 		line2 := StyleDim.Render(meta) + badges
 
@@ -207,6 +208,34 @@ func nucleusBadgesPlain(n registry.Nucleus) string {
 		s += fmt.Sprintf(" [%d PRs]", len(n.PullRequests))
 	}
 	return s
+}
+
+// claudeNeuronDots returns one styled status dot per Claude neuron, or a dim dash if none.
+func claudeNeuronDots(n registry.Nucleus) string {
+	var sb strings.Builder
+	for _, neu := range n.Neurons {
+		if neu.Type == registry.NeuronClaude {
+			sb.WriteString(StatusDot(neu.Status))
+		}
+	}
+	if sb.Len() == 0 {
+		return StyleDim.Render("─")
+	}
+	return sb.String()
+}
+
+// claudeNeuronDotsPlain returns plain-text dots (for width math).
+func claudeNeuronDotsPlain(n registry.Nucleus) string {
+	count := 0
+	for _, neu := range n.Neurons {
+		if neu.Type == registry.NeuronClaude {
+			count++
+		}
+	}
+	if count == 0 {
+		return "─"
+	}
+	return strings.Repeat("●", count)
 }
 
 // viewStatusBar renders the bottom status/help bar for the main view.

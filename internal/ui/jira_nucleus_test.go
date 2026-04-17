@@ -45,7 +45,7 @@ func newJiraBoardModel(t *testing.T, extraSvc func(*ui.Services)) ui.Model {
 
 	svc := ui.Services{
 		LoadNuclei:    func() ([]registry.Nucleus, error) { return nil, nil },
-		CreateNucleus: func(task, jiraKey string) error { return nil },
+		CreateNucleus: func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus: func(id string) error { return nil },
 		GotoNucleus:   func(id string) error { return nil },
 		OpenNvim:      func(id string) error { return nil },
@@ -138,7 +138,7 @@ func TestJiraForm_Submit_PassesJiraKey(t *testing.T) {
 	var capturedJiraKey string
 
 	m := newJiraBoardModel(t, func(svc *ui.Services) {
-		svc.CreateNucleus = func(task, jiraKey string) error {
+		svc.CreateNucleus = func(task, jiraKey, profile string) error {
 			capturedJiraKey = jiraKey
 			return nil
 		}
@@ -167,7 +167,7 @@ func TestJiraForm_Submit_PassesEmptyKeyForAdHoc(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { capturedJiraKey = jiraKey; return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { capturedJiraKey = jiraKey; return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -212,7 +212,7 @@ func TestNucleusDetail_WithJiraKey_LoadsMetadata(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -264,7 +264,7 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 	metaCmd := make(chan tea.Cmd, 1)
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
@@ -311,7 +311,7 @@ func TestNucleusDetail_NoJiraKey_NoBranchInfoJiraSection(t *testing.T) {
 
 	svc := ui.Services{
 		LoadNuclei:     func() ([]registry.Nucleus, error) { return nuclei, nil },
-		CreateNucleus:  func(task, jiraKey string) error { return nil },
+		CreateNucleus:  func(task, jiraKey, profile string) error { return nil },
 		RemoveNucleus:  func(id string) error { return nil },
 		GotoNucleus:    func(id string) error { return nil },
 		OpenNvim:       func(id string) error { return nil },
