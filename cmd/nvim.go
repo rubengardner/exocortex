@@ -130,7 +130,11 @@ func executeNvim(id string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	}
 
 	// Open a new window and launch nvim.
-	files, err := gt.ModifiedFiles(nucleus.WorktreePath)
+	worktreePath := ""
+	if primary := nucleus.PrimaryNeuron(); primary != nil {
+		worktreePath = primary.WorktreePath
+	}
+	files, err := gt.ModifiedFiles(worktreePath)
 	if err != nil {
 		return fmt.Errorf("git ls-files: %w", err)
 	}

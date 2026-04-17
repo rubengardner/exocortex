@@ -70,7 +70,7 @@ func TestNucleusDetail_NeuronCursorDown(t *testing.T) {
 	// Build a nucleus with 2 neurons so cursor can move.
 	nuclei := []registry.Nucleus{
 		{
-			ID: "nucl1", Branch: "task/nucl1", TaskDescription: "Test",
+			ID: "nucl1", TaskDescription: "Test",
 			Status: "idle",
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},
@@ -110,7 +110,7 @@ func TestNucleusDetail_NeuronCursorClamped(t *testing.T) {
 func TestNucleusDetail_NeuronCursorUp(t *testing.T) {
 	nuclei := []registry.Nucleus{
 		{
-			ID: "nucl1", Branch: "task/nucl1", TaskDescription: "Test",
+			ID: "nucl1", TaskDescription: "Test",
 			Status: "idle",
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},

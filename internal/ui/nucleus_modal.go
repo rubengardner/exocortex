@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ruben_gardner/exocortex/internal/registry"
 )
 
 // NucleusModalMode indicates the type of nucleus being created.
@@ -58,8 +59,7 @@ type ModalSubmit struct {
 	Profile        string
 	CreateWorktree bool
 	JiraKey        string
-	PRNumber       int
-	PRRepo         string
+	PR             registry.PullRequest // populated in review mode
 }
 
 // NucleusModal is a self-contained form widget for creating a nucleus.
@@ -530,8 +530,7 @@ func (m NucleusModal) trySubmit() (NucleusModal, ModalRequest, tea.Cmd) {
 		Profile:        m.selectedProfile(),
 		CreateWorktree: m.createWorktree,
 		JiraKey:        m.jiraKey,
-		PRNumber:       m.prNumber,
-		PRRepo:         m.prRepo,
+		PR:             registry.PullRequest{Number: m.prNumber, Repo: m.prRepo},
 	}}, nil
 }
 

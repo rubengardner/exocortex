@@ -103,18 +103,18 @@ func executeNew(task, repoArg, branch, claudeConfigDir, jiraKey string, createWo
 
 	nucleus := registry.Nucleus{
 		ID:              id,
-		RepoPath:        repoPath,
-		WorktreePath:    worktreePath,
-		Branch:          branch,
 		TaskDescription: task,
 		JiraKey:         jiraKey,
 		Neurons: []registry.Neuron{
 			{
-				ID:         "c1",
-				Type:       registry.NeuronClaude,
-				TmuxTarget: target,
-				Profile:    claudeConfigDir,
-				Status:     "idle",
+				ID:           "c1",
+				Type:         registry.NeuronClaude,
+				TmuxTarget:   target,
+				Profile:      claudeConfigDir,
+				Status:       "idle",
+				RepoPath:     repoPath,
+				WorktreePath: worktreePath,
+				Branch:       branch,
 			},
 		},
 		Status:    "idle",
@@ -186,21 +186,24 @@ func executeReview(task, repoArg, branch, claudeConfigDir string, prNumber int, 
 		fmt.Fprintf(out, "warning: could not start claude: %v\n", err)
 	}
 
+	var prs []registry.PullRequest
+	if prNumber != 0 {
+		prs = []registry.PullRequest{{Number: prNumber, Repo: prRepo}}
+	}
 	nucleus := registry.Nucleus{
 		ID:              id,
-		RepoPath:        repoPath,
-		WorktreePath:    worktreePath,
-		Branch:          branch,
 		TaskDescription: task,
-		PRNumber:        prNumber,
-		PRRepo:          prRepo,
+		PullRequests:    prs,
 		Neurons: []registry.Neuron{
 			{
-				ID:         "c1",
-				Type:       registry.NeuronClaude,
-				TmuxTarget: target,
-				Profile:    claudeConfigDir,
-				Status:     "idle",
+				ID:           "c1",
+				Type:         registry.NeuronClaude,
+				TmuxTarget:   target,
+				Profile:      claudeConfigDir,
+				Status:       "idle",
+				RepoPath:     repoPath,
+				WorktreePath: worktreePath,
+				Branch:       branch,
 			},
 		},
 		Status:    "idle",

@@ -66,9 +66,9 @@ func (t *fakeTmuxRemove) CapturePane(target string) (string, error)      { retur
 
 func TestRunRemove_KillsAllNeuronPanes(t *testing.T) {
 	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
-		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitRemove{}
@@ -85,9 +85,9 @@ func TestRunRemove_KillsAllNeuronPanes(t *testing.T) {
 
 func TestRunRemove_KillsAllNeurons(t *testing.T) {
 	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
-		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
 				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:2.0"},
 			}},
 	}}
@@ -105,9 +105,9 @@ func TestRunRemove_KillsAllNeurons(t *testing.T) {
 
 func TestRunRemove_RemovesWorktree(t *testing.T) {
 	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
-		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitRemove{}
@@ -121,9 +121,9 @@ func TestRunRemove_RemovesWorktree(t *testing.T) {
 
 func TestRunRemove_DeletesFromRegistry(t *testing.T) {
 	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
-		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitRemove{}
@@ -148,9 +148,9 @@ func TestRunRemove_UnknownID(t *testing.T) {
 
 func TestRunRemove_TmuxError_StillRemovesWorktreeAndRegistry(t *testing.T) {
 	reg := &fakeRegistryRemove{nuclei: []registry.Nucleus{
-		{ID: "abc123", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.2", RepoPath: "/repo", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitRemove{}

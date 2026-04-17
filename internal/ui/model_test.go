@@ -77,14 +77,14 @@ func drainCmd(m tea.Model, cmd tea.Cmd) tea.Model {
 func sampleNuclei() []registry.Nucleus {
 	return []registry.Nucleus{
 		{
-			ID: "nucl1", Branch: "task/nucl1", TaskDescription: "First task",
+			ID: "nucl1", TaskDescription: "First task",
 			Status: "idle", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},
 			},
 		},
 		{
-			ID: "nucl2", Branch: "task/nucl2", TaskDescription: "Second task",
+			ID: "nucl2", TaskDescription: "Second task",
 			Status: "working", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.1", Status: "working"},
@@ -287,10 +287,10 @@ func newReviewSvc(nuclei []registry.Nucleus, pr samplePR) (ui.Services, *reviewR
 		ListBranches: func(_ string) ([]string, error) {
 			return []string{"main", pr.branch}, nil
 		},
-		CreateReviewNucleus: func(task, repo, branch, profile string, prNumber int, prRepo string, createWorktree bool) error {
+		CreateReviewNucleus: func(task, repo, branch, profile string, pr registry.PullRequest, createWorktree bool) error {
 			rec.branch = branch
-			rec.prNumber = prNumber
-			rec.prRepo = prRepo
+			rec.prNumber = pr.Number
+			rec.prRepo = pr.Repo
 			return nil
 		},
 		LoadGitHubPRs: func(_ github.PRFilter) ([]github.PR, error) {

@@ -85,9 +85,9 @@ func (t *fakeTmuxNvim) CapturePane(target string) (string, error) { return "", n
 
 func TestRunNvim_UsesModifiedFile(t *testing.T) {
 	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitNvim{files: []string{"main.go", "other.go"}}
@@ -107,9 +107,9 @@ func TestRunNvim_UsesModifiedFile(t *testing.T) {
 
 func TestRunNvim_FallsBackToWorktreeRoot(t *testing.T) {
 	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitNvim{files: []string{}}
@@ -126,9 +126,9 @@ func TestRunNvim_FallsBackToWorktreeRoot(t *testing.T) {
 
 func TestRunNvim_ExistingWindow_SelectsInsteadOfCreating(t *testing.T) {
 	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
 				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:3.0"},
 			}},
 	}}
@@ -152,9 +152,9 @@ func TestRunNvim_ExistingWindow_SelectsInsteadOfCreating(t *testing.T) {
 
 func TestRunNvim_AddsNvimNeuron_FirstTime(t *testing.T) {
 	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
 			}},
 	}}
 	gt := &fakeGitNvim{files: []string{"main.go"}}
@@ -175,9 +175,9 @@ func TestRunNvim_AddsNvimNeuron_FirstTime(t *testing.T) {
 func TestRunNvim_UpdatesNvimNeuron_DeadWindow(t *testing.T) {
 	// Nucleus already has an nvim neuron but the window is gone — update target.
 	reg := &fakeRegistryNvim{nuclei: []registry.Nucleus{
-		{ID: "abc123", WorktreePath: "/repo/.worktrees/abc123",
+		{ID: "abc123",
 			Neurons: []registry.Neuron{
-				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/abc123"},
 				{ID: "nvim", Type: registry.NeuronNvim, TmuxTarget: "main:3.0"},
 			}},
 	}}

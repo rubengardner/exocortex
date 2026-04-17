@@ -94,10 +94,9 @@ func TestExecuteAddNeuron_Claude(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID:           "nucl1",
-				WorktreePath: "/repo/.worktrees/nucl1",
+				ID: "nucl1",
 				Neurons: []registry.Neuron{
-					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0"},
+					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/nucl1"},
 				},
 			},
 		},
@@ -126,9 +125,8 @@ func TestExecuteAddNeuron_Shell(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID:           "nucl1",
-				WorktreePath: "/repo/.worktrees/nucl1",
-				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+				ID: "nucl1",
+				Neurons: []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude, WorktreePath: "/repo/.worktrees/nucl1"}},
 			},
 		},
 	}
@@ -154,9 +152,8 @@ func TestExecuteAddNeuron_WithClaudeConfigDir(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID:           "nucl1",
-				WorktreePath: "/repo/.worktrees/nucl1",
-				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+				ID: "nucl1",
+				Neurons: []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude, WorktreePath: "/repo/.worktrees/nucl1"}},
 			},
 		},
 	}
@@ -179,10 +176,8 @@ func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID:           "nucl1",
-				RepoPath:     "/repo",
-				WorktreePath: "/repo/.worktrees/nucl1",
-				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+				ID: "nucl1",
+				Neurons: []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude, RepoPath: "/repo", WorktreePath: "/repo/.worktrees/nucl1"}},
 			},
 		},
 	}
@@ -202,10 +197,8 @@ func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
 		nuclei: []registry.Nucleus{
 			{
-				ID:           "nucl1",
-				RepoPath:     "/repo",
-				WorktreePath: "", // no worktree
-				Neurons:      []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude}},
+				ID: "nucl1",
+				Neurons: []registry.Neuron{{ID: "c1", Type: registry.NeuronClaude, RepoPath: "/repo", WorktreePath: ""}},
 			},
 		},
 	}

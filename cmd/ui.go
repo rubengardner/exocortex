@@ -184,7 +184,7 @@ func buildServices() ui.Services {
 		ListBranches: func(repoPath string) ([]string, error) {
 			return gt.ListBranches(repoPath)
 		},
-		CreateReviewNucleus: func(task, repo, branch, profileName string, prNumber int, prRepo string, createWorktree bool) error {
+		CreateReviewNucleus: func(task, repo, branch, profileName string, pr registry.PullRequest, createWorktree bool) error {
 			claudeConfigDir := ""
 			if profileName != "" {
 				cfg, err := iconfig.Load(iconfig.DefaultPath())
@@ -192,7 +192,7 @@ func buildServices() ui.Services {
 					claudeConfigDir = cfg.Profiles[profileName]
 				}
 			}
-			return executeReview(task, repo, branch, claudeConfigDir, prNumber, prRepo, createWorktree, reg, gt, tm, io.Discard)
+			return executeReview(task, repo, branch, claudeConfigDir, pr.Number, pr.Repo, createWorktree, reg, gt, tm, io.Discard)
 		},
 		OpenNvimFile: func(nucleusID, filePath string, line int) error {
 			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)

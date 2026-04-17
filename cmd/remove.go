@@ -44,8 +44,10 @@ func executeRemove(id string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	}
 
 	// Remove the git worktree — warn on failure but continue cleanup.
-	if err := gt.RemoveWorktree(nucleus.RepoPath, nucleus.WorktreePath); err != nil {
-		fmt.Printf("warning: could not remove worktree %s: %v\n", nucleus.WorktreePath, err)
+	if primary := nucleus.PrimaryNeuron(); primary != nil {
+		if err := gt.RemoveWorktree(primary.RepoPath, primary.WorktreePath); err != nil {
+			fmt.Printf("warning: could not remove worktree %s: %v\n", primary.WorktreePath, err)
+		}
 	}
 
 	return reg.Delete(id)

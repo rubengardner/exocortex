@@ -20,16 +20,16 @@ func tempPath(t *testing.T) string {
 func sampleNucleus(id string) registry.Nucleus {
 	return registry.Nucleus{
 		ID:              id,
-		RepoPath:        "/repo",
-		WorktreePath:    "/repo/.worktrees/" + id,
-		Branch:          "task/" + id,
 		TaskDescription: "task " + id,
 		Neurons: []registry.Neuron{
 			{
-				ID:         "c1",
-				Type:       registry.NeuronClaude,
-				TmuxTarget: "main:1.0",
-				Status:     "idle",
+				ID:           "c1",
+				Type:         registry.NeuronClaude,
+				TmuxTarget:   "main:1.0",
+				Status:       "idle",
+				RepoPath:     "/repo",
+				WorktreePath: "/repo/.worktrees/" + id,
+				Branch:       "task/" + id,
 			},
 		},
 		Status:    "idle",
@@ -53,7 +53,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 	path := tempPath(t)
 	n := sampleNucleus("abc123")
 
-	reg := &registry.Registry{Version: 2, Nuclei: []registry.Nucleus{n}}
+	reg := &registry.Registry{Version: 3, Nuclei: []registry.Nucleus{n}}
 	if err := registry.Save(path, reg); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -349,23 +349,30 @@ func TestNucleus_PrimaryNeuron_NoNeurons(t *testing.T) {
 	}
 }
 
-func TestNucleus_Workdir_PrefersWorktree(t *testing.T) {
-	n := registry.Nucleus{
+func TestNeuron_Workdir_PrefersWorktree(t *testing.T) {
+	neu := registry.Neuron{
 		RepoPath:     "/repo",
 		WorktreePath: "/repo/.worktrees/abc",
 	}
-	if got := n.Workdir(); got != "/repo/.worktrees/abc" {
+	if got := neu.Workdir(); got != "/repo/.worktrees/abc" {
 		t.Fatalf("expected worktree path, got %q", got)
 	}
 }
 
-func TestNucleus_Workdir_FallsBackToRepo(t *testing.T) {
-	n := registry.Nucleus{
+func TestNeuron_Workdir_FallsBackToRepo(t *testing.T) {
+	neu := registry.Neuron{
 		RepoPath:     "/repo",
 		WorktreePath: "",
 	}
-	if got := n.Workdir(); got != "/repo" {
+	if got := neu.Workdir(); got != "/repo" {
 		t.Fatalf("expected repo path when worktree is empty, got %q", got)
+	}
+}
+
+func TestNucleus_Workdir_DelegatesToPrimaryNeuron(t *testing.T) {
+	n := sampleNucleus("wkdir")
+	if got := n.Workdir(); got != "/repo/.worktrees/wkdir" {
+		t.Fatalf("expected neuron worktree path, got %q", got)
 	}
 }
 
@@ -380,9 +387,9 @@ func TestNucleus_NvimNeuron(t *testing.T) {
 	}
 }
 
-// ── v1 → v2 migration ─────────────────────────────────────────────────────────
+// ── v1 → v3 migration ─────────────────────────────────────────────────────────
 
-func TestMigrateV1toV2_Basic(t *testing.T) {
+func TestMigrateV1toV3_Basic(t *testing.T) {
 	// Write a v1-format registry file (no "version" key, uses "agents").
 	v1JSON := `{
 		"agents": [
@@ -407,8 +414,8 @@ func TestMigrateV1toV2_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load v1: %v", err)
 	}
-	if r.Version != 2 {
-		t.Fatalf("expected version 2 after migration, got %d", r.Version)
+	if r.Version != 3 {
+		t.Fatalf("expected version 3 after migration, got %d", r.Version)
 	}
 	if len(r.Nuclei) != 1 {
 		t.Fatalf("expected 1 nucleus, got %d", len(r.Nuclei))
@@ -416,9 +423,6 @@ func TestMigrateV1toV2_Basic(t *testing.T) {
 	n := r.Nuclei[0]
 	if n.ID != "fixaut" {
 		t.Fatalf("wrong id: %s", n.ID)
-	}
-	if n.Branch != "agent/fixaut" {
-		t.Fatalf("wrong branch: %s", n.Branch)
 	}
 	if len(n.Neurons) != 1 {
 		t.Fatalf("expected 1 neuron, got %d", len(n.Neurons))
@@ -430,9 +434,15 @@ func TestMigrateV1toV2_Basic(t *testing.T) {
 	if neuron.TmuxTarget != "main:1.0" {
 		t.Fatalf("wrong tmux_target: %s", neuron.TmuxTarget)
 	}
+	if neuron.Branch != "agent/fixaut" {
+		t.Fatalf("branch not migrated to neuron: %s", neuron.Branch)
+	}
+	if neuron.RepoPath != "/repo" {
+		t.Fatalf("repo_path not migrated to neuron: %s", neuron.RepoPath)
+	}
 }
 
-func TestMigrateV1toV2_WithNvimTarget(t *testing.T) {
+func TestMigrateV1toV3_WithNvimTarget(t *testing.T) {
 	// An agent with an nvim_target gets two neurons after migration.
 	v1JSON := `{
 		"agents": [
@@ -469,7 +479,7 @@ func TestMigrateV1toV2_WithNvimTarget(t *testing.T) {
 	}
 }
 
-func TestMigrateV1toV2_WithProfile(t *testing.T) {
+func TestMigrateV1toV3_WithProfile(t *testing.T) {
 	v1JSON := `{
 		"agents": [
 			{
@@ -502,7 +512,7 @@ func TestMigrateV1toV2_WithProfile(t *testing.T) {
 	}
 }
 
-func TestMigrateV1toV2_EmptyAgents(t *testing.T) {
+func TestMigrateV1toV3_EmptyAgents(t *testing.T) {
 	v1JSON := `{"agents": []}`
 	path := tempPath(t)
 	_ = os.WriteFile(path, []byte(v1JSON), 0o644)
@@ -516,8 +526,8 @@ func TestMigrateV1toV2_EmptyAgents(t *testing.T) {
 	}
 }
 
-func TestMigrateV1toV2_SavePersistsAsV2(t *testing.T) {
-	// After loading a v1 file, saving it should produce a v2 file.
+func TestMigrateV1toV3_SavePersistsAsV3(t *testing.T) {
+	// After loading a v1 file, saving it should produce a v3 file.
 	v1JSON := `{"agents": [{"id":"ag1","repo_path":"/r","worktree_path":"/r/.worktrees/ag1","branch":"b","task_description":"t","tmux_target":"m:1.0","status":"idle","created_at":"2024-01-01T00:00:00Z"}]}`
 	path := tempPath(t)
 	_ = os.WriteFile(path, []byte(v1JSON), 0o644)
@@ -536,5 +546,62 @@ func TestMigrateV1toV2_SavePersistsAsV2(t *testing.T) {
 	}
 	if _, hasNuclei := raw["nuclei"]; !hasNuclei {
 		t.Fatal("saved file should contain 'nuclei' key")
+	}
+}
+
+// ── v2 → v3 migration ─────────────────────────────────────────────────────────
+
+func TestMigrateV2toV3_MovesFieldsToNeuron(t *testing.T) {
+	// A v2 registry has repo_path/worktree_path/branch on the Nucleus and a
+	// single pr_number/pr_repo field. After migration these should appear on
+	// the primary Claude Neuron and in PullRequests respectively.
+	v2JSON := `{
+		"version": 2,
+		"nuclei": [
+			{
+				"id": "rev01",
+				"repo_path": "/repo",
+				"worktree_path": "/repo/.worktrees/rev01",
+				"branch": "feat/oauth",
+				"task_description": "Review PR",
+				"pr_number": 42,
+				"pr_repo": "owner/repo",
+				"neurons": [
+					{"id": "c1", "type": "claude", "tmux_target": "main:1.0", "status": "idle"}
+				],
+				"status": "idle",
+				"created_at": "2024-01-01T00:00:00Z"
+			}
+		]
+	}`
+	path := tempPath(t)
+	_ = os.WriteFile(path, []byte(v2JSON), 0o644)
+
+	r, err := registry.Load(path)
+	if err != nil {
+		t.Fatalf("load v2: %v", err)
+	}
+	if r.Version != 3 {
+		t.Fatalf("expected version 3, got %d", r.Version)
+	}
+	n := r.Nuclei[0]
+	primary := n.PrimaryNeuron()
+	if primary == nil {
+		t.Fatal("expected primary neuron")
+	}
+	if primary.Branch != "feat/oauth" {
+		t.Fatalf("branch not moved to neuron: %q", primary.Branch)
+	}
+	if primary.RepoPath != "/repo" {
+		t.Fatalf("repo_path not moved to neuron: %q", primary.RepoPath)
+	}
+	if primary.WorktreePath != "/repo/.worktrees/rev01" {
+		t.Fatalf("worktree_path not moved to neuron: %q", primary.WorktreePath)
+	}
+	if len(n.PullRequests) != 1 || n.PullRequests[0].Number != 42 {
+		t.Fatalf("pr_number not moved to PullRequests: %v", n.PullRequests)
+	}
+	if n.PullRequests[0].Repo != "owner/repo" {
+		t.Fatalf("pr_repo not moved to PullRequests: %v", n.PullRequests)
 	}
 }

@@ -123,7 +123,7 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailJiraIssue = nil
 		m.detailJiraLoading = n.JiraKey != "" && m.services.LoadJiraIssueMeta != nil
 		m.detailPRDetail = nil
-		m.detailPRLoading = n.PRNumber != 0 && n.PRRepo != "" && m.services.LoadGitHubPR != nil
+		m.detailPRLoading = len(n.PullRequests) > 0 && m.services.LoadGitHubPR != nil
 		m.state = stateNucleusDetail
 		return m, tea.Batch(m.loadBranchInfoCmd(), m.captureDetailPaneCmd(), m.loadJiraIssueMetaCmd(), m.loadGitHubPRMetaCmd())
 	}
@@ -177,14 +177,18 @@ func (m Model) viewNucleusList(width int) string {
 	return sb.String()
 }
 
-// nucleusBadges returns styled inline badges for Jira key and PR number.
+// nucleusBadges returns styled inline badges for Jira key and PR numbers.
 func nucleusBadges(n registry.Nucleus) string {
 	var s string
 	if n.JiraKey != "" {
 		s += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKey+"]")
 	}
-	if n.PRNumber != 0 {
-		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[#%d]", n.PRNumber))
+	switch len(n.PullRequests) {
+	case 0:
+	case 1:
+		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[#%d]", n.PullRequests[0].Number))
+	default:
+		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[%d PRs]", len(n.PullRequests)))
 	}
 	return s
 }
@@ -195,8 +199,12 @@ func nucleusBadgesPlain(n registry.Nucleus) string {
 	if n.JiraKey != "" {
 		s += " [" + n.JiraKey + "]"
 	}
-	if n.PRNumber != 0 {
-		s += fmt.Sprintf(" [#%d]", n.PRNumber)
+	switch len(n.PullRequests) {
+	case 0:
+	case 1:
+		s += fmt.Sprintf(" [#%d]", n.PullRequests[0].Number)
+	default:
+		s += fmt.Sprintf(" [%d PRs]", len(n.PullRequests))
 	}
 	return s
 }

@@ -9,7 +9,9 @@ import (
 )
 
 // Registry is the top-level container persisted to disk.
-// Version 2 uses Nuclei; version 0/1 (legacy) used Agents and is auto-migrated on load.
+// Version 3 uses Nuclei with per-Neuron repo/worktree/branch.
+// Version 2 (legacy) stores those fields on the Nucleus and is auto-migrated on load.
+// Version 0/1 (legacy) used Agents and is also auto-migrated on load.
 type Registry struct {
 	Version int       `json:"version"`
 	Nuclei  []Nucleus `json:"nuclei"`
@@ -22,26 +24,27 @@ func DefaultPath() string {
 }
 
 // Load reads the registry from path. Returns an empty registry if the file
-// does not exist. A legacy v1 file (with "agents" key) is migrated to v2 on
-// load but not written back — the caller must Save to persist the migration.
+// does not exist. Legacy v1/v2 files are migrated to v3 on load but not written
+// back — the caller must Save to persist the migration.
 func Load(path string) (*Registry, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Registry{Version: 2}, nil
+		return &Registry{Version: 3}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("registry: read %s: %w", path, err)
 	}
 
-	// Probe for the version field without fully parsing the document.
 	var probe struct {
 		Version int `json:"version"`
 	}
 	_ = json.Unmarshal(data, &probe)
 
-	if probe.Version == 0 {
-		// Legacy v1 format — migrate.
+	switch probe.Version {
+	case 0:
 		return migrateV1(data)
+	case 2:
+		return migrateV2(data)
 	}
 
 	var r Registry
@@ -57,7 +60,7 @@ func Save(path string, r *Registry) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
-	r.Version = 2 // always write as v2
+	r.Version = 3 // always write as v3
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return fmt.Errorf("registry: marshal: %w", err)
@@ -192,6 +195,21 @@ func UpdateNeuronTarget(path, nucleusID, neuronID, target string) error {
 	return fmt.Errorf("registry: nucleus %q not found", nucleusID)
 }
 
+// AddPullRequest appends a PullRequest to the named Nucleus.
+func AddPullRequest(path, nucleusID string, pr PullRequest) error {
+	r, err := Load(path)
+	if err != nil {
+		return err
+	}
+	for i := range r.Nuclei {
+		if r.Nuclei[i].ID == nucleusID {
+			r.Nuclei[i].PullRequests = append(r.Nuclei[i].PullRequests, pr)
+			return Save(path, r)
+		}
+	}
+	return fmt.Errorf("registry: nucleus %q not found", nucleusID)
+}
+
 // FindByID returns a pointer to the Nucleus with the given ID.
 func (r *Registry) FindByID(id string) (*Nucleus, error) {
 	for i := range r.Nuclei {
@@ -204,7 +222,6 @@ func (r *Registry) FindByID(id string) (*Nucleus, error) {
 
 // ── v1 migration ──────────────────────────────────────────────────────────────
 
-// agentV1 matches the legacy Agent struct for JSON unmarshalling during migration.
 type agentV1 struct {
 	ID              string    `json:"id"`
 	RepoPath        string    `json:"repo_path"`
@@ -222,32 +239,32 @@ type registryV1 struct {
 	Agents []agentV1 `json:"agents"`
 }
 
-// migrateV1 converts a v1 JSON blob to a v2 Registry.
-// Each Agent becomes a Nucleus; TmuxTarget → claude Neuron; NvimTarget (if set) → nvim Neuron.
+// migrateV1 converts a v1 JSON blob directly to a v3 Registry.
+// Each Agent becomes a Nucleus; repo/worktree/branch land on the Claude Neuron.
 func migrateV1(data []byte) (*Registry, error) {
 	var v1 registryV1
 	if err := json.Unmarshal(data, &v1); err != nil {
 		return nil, fmt.Errorf("registry: parse v1: %w", err)
 	}
 
-	r := &Registry{Version: 2, Nuclei: make([]Nucleus, 0, len(v1.Agents))}
+	r := &Registry{Version: 3, Nuclei: make([]Nucleus, 0, len(v1.Agents))}
 	for _, a := range v1.Agents {
 		n := Nucleus{
 			ID:              a.ID,
-			RepoPath:        a.RepoPath,
-			WorktreePath:    a.WorktreePath,
-			Branch:          a.Branch,
 			TaskDescription: a.TaskDescription,
 			Status:          a.Status,
 			CreatedAt:       a.CreatedAt,
 		}
 
 		claudeNeuron := Neuron{
-			ID:         "c1",
-			Type:       NeuronClaude,
-			TmuxTarget: a.TmuxTarget,
-			Profile:    a.Profile,
-			Status:     a.Status,
+			ID:           "c1",
+			Type:         NeuronClaude,
+			TmuxTarget:   a.TmuxTarget,
+			Profile:      a.Profile,
+			Status:       a.Status,
+			RepoPath:     a.RepoPath,
+			WorktreePath: a.WorktreePath,
+			Branch:       a.Branch,
 		}
 		n.Neurons = append(n.Neurons, claudeNeuron)
 
@@ -259,6 +276,77 @@ func migrateV1(data []byte) (*Registry, error) {
 				Status:     "idle",
 			}
 			n.Neurons = append(n.Neurons, nvimNeuron)
+		}
+
+		r.Nuclei = append(r.Nuclei, n)
+	}
+	return r, nil
+}
+
+// ── v2 migration ──────────────────────────────────────────────────────────────
+
+// nucleusV2 matches the legacy Nucleus struct (version 2) for JSON unmarshalling.
+type nucleusV2 struct {
+	ID              string    `json:"id"`
+	RepoPath        string    `json:"repo_path"`
+	WorktreePath    string    `json:"worktree_path"`
+	Branch          string    `json:"branch"`
+	TaskDescription string    `json:"task_description"`
+	JiraKey         string    `json:"jira_key,omitempty"`
+	PRNumber        int       `json:"pr_number,omitempty"`
+	PRRepo          string    `json:"pr_repo,omitempty"`
+	Neurons         []Neuron  `json:"neurons"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type registryV2 struct {
+	Version int        `json:"version"`
+	Nuclei  []nucleusV2 `json:"nuclei"`
+}
+
+// migrateV2 converts a v2 JSON blob to a v3 Registry.
+// Repo/worktree/branch are moved from each Nucleus onto its primary Claude Neuron.
+// A single PRNumber/PRRepo becomes PullRequests[0].
+func migrateV2(data []byte) (*Registry, error) {
+	var v2 registryV2
+	if err := json.Unmarshal(data, &v2); err != nil {
+		return nil, fmt.Errorf("registry: parse v2: %w", err)
+	}
+
+	r := &Registry{Version: 3, Nuclei: make([]Nucleus, 0, len(v2.Nuclei))}
+	for _, n2 := range v2.Nuclei {
+		n := Nucleus{
+			ID:              n2.ID,
+			TaskDescription: n2.TaskDescription,
+			JiraKey:         n2.JiraKey,
+			Status:          n2.Status,
+			CreatedAt:       n2.CreatedAt,
+		}
+
+		neurons := make([]Neuron, len(n2.Neurons))
+		copy(neurons, n2.Neurons)
+
+		// Find the primary Claude neuron to attach repo/worktree/branch to.
+		primaryIdx := -1
+		for i, neu := range neurons {
+			if neu.Type == NeuronClaude {
+				primaryIdx = i
+				break
+			}
+		}
+		if primaryIdx == -1 && len(neurons) > 0 {
+			primaryIdx = 0
+		}
+		if primaryIdx >= 0 {
+			neurons[primaryIdx].RepoPath = n2.RepoPath
+			neurons[primaryIdx].WorktreePath = n2.WorktreePath
+			neurons[primaryIdx].Branch = n2.Branch
+		}
+		n.Neurons = neurons
+
+		if n2.PRNumber != 0 {
+			n.PullRequests = []PullRequest{{Number: n2.PRNumber, Repo: n2.PRRepo}}
 		}
 
 		r.Nuclei = append(r.Nuclei, n)

@@ -200,7 +200,7 @@ func TestNucleusDetail_WithJiraKey_LoadsMetadata(t *testing.T) {
 	var loadedKey string
 	nuclei := []registry.Nucleus{
 		{
-			ID: "auth1", Branch: "task/PROJ-42/fix-auth", TaskDescription: "Fix auth bug",
+			ID: "auth1", TaskDescription: "Fix auth bug",
 			JiraKey: "PROJ-42", Status: "working", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "working"},
@@ -251,7 +251,7 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 	}
 	nuclei := []registry.Nucleus{
 		{
-			ID: "auth1", Branch: "task/PROJ-42/fix-auth", TaskDescription: "Fix auth bug",
+			ID: "auth1", TaskDescription: "Fix auth bug",
 			JiraKey: "PROJ-42", Status: "working", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "working"},
@@ -299,7 +299,7 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 func TestNucleusDetail_NoJiraKey_NoBranchInfoJiraSection(t *testing.T) {
 	nuclei := []registry.Nucleus{
 		{
-			ID: "task1", Branch: "task/something", TaskDescription: "Ad-hoc task",
+			ID: "task1", TaskDescription: "Ad-hoc task",
 			Status: "idle", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},

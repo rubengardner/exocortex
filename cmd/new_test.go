@@ -149,8 +149,8 @@ func TestRunNew_AutoGeneratesBranch(t *testing.T) {
 	if reg.added == nil {
 		t.Fatal("nothing saved")
 	}
-	if reg.added.Branch == "" {
-		t.Fatal("branch should be auto-generated")
+	if reg.added.Neurons[0].Branch == "" {
+		t.Fatal("branch should be auto-generated on the primary neuron")
 	}
 }
 
@@ -160,8 +160,8 @@ func TestRunNew_UsesBranchFlag(t *testing.T) {
 	tm := &fakeTmux{target: "main:1.0"}
 
 	_ = executeNew("my task", ".", "my-explicit-branch", "", "", true, reg, gt, tm, &strings.Builder{})
-	if reg.added.Branch != "my-explicit-branch" {
-		t.Fatalf("expected explicit branch, got %s", reg.added.Branch)
+	if reg.added.Neurons[0].Branch != "my-explicit-branch" {
+		t.Fatalf("expected explicit branch on primary neuron, got %s", reg.added.Neurons[0].Branch)
 	}
 }
 
@@ -331,14 +331,14 @@ func TestExecuteReview_SavesNucleusWithPRLinkage(t *testing.T) {
 	if reg.added == nil {
 		t.Fatal("expected registry.Add to be called")
 	}
-	if reg.added.PRNumber != 42 {
-		t.Fatalf("expected PRNumber=42, got %d", reg.added.PRNumber)
+	if len(reg.added.PullRequests) == 0 || reg.added.PullRequests[0].Number != 42 {
+		t.Fatalf("expected PullRequests[0].Number=42, got %v", reg.added.PullRequests)
 	}
-	if reg.added.PRRepo != "owner/repo" {
-		t.Fatalf("expected PRRepo=owner/repo, got %s", reg.added.PRRepo)
+	if reg.added.PullRequests[0].Repo != "owner/repo" {
+		t.Fatalf("expected PullRequests[0].Repo=owner/repo, got %s", reg.added.PullRequests[0].Repo)
 	}
-	if reg.added.Branch != "feat/oauth" {
-		t.Fatalf("expected branch feat/oauth, got %s", reg.added.Branch)
+	if reg.added.Neurons[0].Branch != "feat/oauth" {
+		t.Fatalf("expected neuron branch feat/oauth, got %s", reg.added.Neurons[0].Branch)
 	}
 }
 

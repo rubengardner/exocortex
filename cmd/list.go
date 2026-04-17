@@ -38,7 +38,7 @@ func executeList(reg nucleusSvc, out io.Writer) error {
 			pane = p.TmuxTarget
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
-			n.ID, n.Branch, n.TaskDescription, n.Status, len(n.Neurons), pane)
+			n.ID, n.PrimaryBranch(), n.TaskDescription, n.Status, len(n.Neurons), pane)
 	}
 	return w.Flush()
 }

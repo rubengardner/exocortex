@@ -26,11 +26,10 @@ func TestRunList_ShowsNuclei(t *testing.T) {
 		nuclei: []registry.Nucleus{
 			{
 				ID:              "fixaut",
-				Branch:          "task/fixaut",
 				TaskDescription: "Fix auth bug",
 				Status:          "idle",
 				Neurons: []registry.Neuron{
-					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle"},
+					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "idle", Branch: "task/fixaut"},
 				},
 				CreatedAt: time.Now(),
 			},

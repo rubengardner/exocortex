@@ -51,7 +51,7 @@ type Services struct {
 	// CreateReviewNucleus creates a nucleus on an existing branch for PR review.
 	// createWorktree=false skips git worktree creation.
 	// nil disables the review workflow.
-	CreateReviewNucleus func(task, repo, branch, profile string, prNumber int, prRepo string, createWorktree bool) error
+	CreateReviewNucleus func(task, repo, branch, profile string, pr registry.PullRequest, createWorktree bool) error
 	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
 	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
 	OpenNvimFile func(nucleusID, filePath string, line int) error
@@ -472,7 +472,7 @@ func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, tea.Batch(cmd, func() tea.Msg {
-				return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.PRNumber, sub.PRRepo, sub.CreateWorktree)}
+				return actionDoneMsg{err: svc(sub.Task, sub.Repo, sub.Branch, sub.Profile, sub.PR, sub.CreateWorktree)}
 			})
 		}
 		svc := m.services.CreateNucleus
@@ -612,7 +612,10 @@ func (m Model) loadBranchInfoCmd() tea.Cmd {
 	if m.services.LoadBranchInfo == nil || len(m.nuclei) == 0 {
 		return nil
 	}
-	worktreePath := m.nuclei[m.cursor].WorktreePath
+	worktreePath := ""
+	if primary := m.nuclei[m.cursor].PrimaryNeuron(); primary != nil {
+		worktreePath = primary.WorktreePath
+	}
 	svc := m.services.LoadBranchInfo
 	return func() tea.Msg {
 		modified, ahead, err := svc(worktreePath)
@@ -722,12 +725,12 @@ func (m Model) loadGitHubPRMetaCmd() tea.Cmd {
 		return nil
 	}
 	n := m.nuclei[m.cursor]
-	if n.PRNumber == 0 || n.PRRepo == "" {
+	if len(n.PullRequests) == 0 {
 		return nil
 	}
 	svc := m.services.LoadGitHubPR
-	repo := n.PRRepo
-	number := n.PRNumber
+	repo := n.PullRequests[0].Repo
+	number := n.PullRequests[0].Number
 	return func() tea.Msg {
 		detail, err := svc(repo, number)
 		return githubPRMetaLoadedMsg{detail: detail, err: err}

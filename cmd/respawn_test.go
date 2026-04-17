@@ -59,10 +59,9 @@ func (t *fakeTmuxRespawn) CapturePane(target string) (string, error) { return ""
 func sampleNucleusRespawn(id, tmuxTarget string) registry.Nucleus {
 	return registry.Nucleus{
 		ID:              id,
-		WorktreePath:    "/repo/.worktrees/" + id,
 		TaskDescription: "fix bug",
 		Neurons: []registry.Neuron{
-			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: tmuxTarget, Status: "idle"},
+			{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: tmuxTarget, Status: "idle", WorktreePath: "/repo/.worktrees/" + id},
 		},
 	}
 }

@@ -132,7 +132,7 @@ func (m Model) viewNucleusDetailDashboard() string {
 
 // viewDetailHeader renders the one-line header for the detail dashboard.
 func (m Model) viewDetailHeader(n registry.Nucleus) string {
-	left := StyleHeader.Render("◈  NUCLEUS " + n.ID + "  •  " + truncate(n.Branch, 40) + "  •  " + n.Status)
+	left := StyleHeader.Render("◈  NUCLEUS " + n.ID + "  •  " + truncate(n.PrimaryBranch(), 40) + "  •  " + n.Status)
 	right := StyleMuted.Render(fmtAge(n.CreatedAt))
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -201,24 +201,28 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 	}
 
 	// ── GitHub PR section ─────────────────────────────────────────────────────
-	if n.PRNumber != 0 {
-		title := fmt.Sprintf("PR #%d", n.PRNumber)
+	for i, pr := range n.PullRequests {
+		title := fmt.Sprintf("PR #%d", pr.Number)
 		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
 		sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
-		switch {
-		case m.detailPRLoading:
-			sb.WriteString(StyleDim.Render("  loading…") + "\n")
-		case m.detailPRDetail != nil:
-			d := m.detailPRDetail
-			diff := fmt.Sprintf("+%d -%d • %d file(s)", d.Additions, d.Deletions, d.ChangedFiles)
-			sb.WriteString(StyleValue.Render("  "+truncate(diff, width-4)) + "\n")
-			sb.WriteString(StyleLabel.Render("Repo") + StyleValue.Render(truncate(n.PRRepo, width-10)) + "\n")
-			if d.Body != "" {
-				first := firstLine(d.Body)
-				sb.WriteString(StyleDim.Render("  "+truncate(first, width-4)) + "\n")
+		if i == 0 {
+			switch {
+			case m.detailPRLoading:
+				sb.WriteString(StyleDim.Render("  loading…") + "\n")
+			case m.detailPRDetail != nil:
+				d := m.detailPRDetail
+				diff := fmt.Sprintf("+%d -%d • %d file(s)", d.Additions, d.Deletions, d.ChangedFiles)
+				sb.WriteString(StyleValue.Render("  "+truncate(diff, width-4)) + "\n")
+				sb.WriteString(StyleLabel.Render("Repo") + StyleValue.Render(truncate(pr.Repo, width-10)) + "\n")
+				if d.Body != "" {
+					first := firstLine(d.Body)
+					sb.WriteString(StyleDim.Render("  "+truncate(first, width-4)) + "\n")
+				}
+			default:
+				sb.WriteString(StyleDim.Render(fmt.Sprintf("  #%d  %s", pr.Number, truncate(pr.Repo, width-12))) + "\n")
 			}
-		default:
-			sb.WriteString(StyleDim.Render(fmt.Sprintf("  #%d  %s", n.PRNumber, truncate(n.PRRepo, width-12))) + "\n")
+		} else {
+			sb.WriteString(StyleDim.Render(fmt.Sprintf("  #%d  %s", pr.Number, truncate(pr.Repo, width-12))) + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -335,7 +339,7 @@ func (m Model) viewNucleusDetail(width int) string {
 		return StyleLabel.Render(label) + StyleValue.Render(truncate(value, width-16)) + "\n"
 	}
 	sb.WriteString(field("ID", n.ID))
-	sb.WriteString(field("Branch", n.Branch))
+	sb.WriteString(field("Branch", n.PrimaryBranch()))
 	sb.WriteString(StyleLabel.Render("Status") + StatusDot(n.Status) + " " + n.Status + "\n")
 	primaryTarget := "—"
 	if primary := n.PrimaryNeuron(); primary != nil {

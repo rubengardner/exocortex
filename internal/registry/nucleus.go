@@ -15,43 +15,63 @@ const (
 )
 
 // Neuron is a running process (tmux pane) inside a Nucleus.
+// Each Neuron owns its own repo, worktree, and branch so a single Nucleus can
+// span multiple repositories simultaneously.
 type Neuron struct {
-	ID         string     `json:"id"`
-	Type       NeuronType `json:"type"`
-	TmuxTarget string     `json:"tmux_target"`
-	Profile    string     `json:"profile,omitempty"` // CLAUDE_CONFIG_DIR path (claude neurons only)
-	Status     string     `json:"status"`
+	ID           string     `json:"id"`
+	Type         NeuronType `json:"type"`
+	TmuxTarget   string     `json:"tmux_target"`
+	Profile      string     `json:"profile,omitempty"`      // CLAUDE_CONFIG_DIR path (claude neurons only)
+	Status       string     `json:"status"`
+	RepoPath     string     `json:"repo_path,omitempty"`     // absolute path to git repo root
+	WorktreePath string     `json:"worktree_path,omitempty"` // absolute path to git worktree (empty = repo root)
+	Branch       string     `json:"branch,omitempty"`        // branch this neuron is working on
 }
 
-// Nucleus is the top-level unit of work. It owns one git worktree and branch
-// and may contain multiple Neurons (processes) working within it.
-type Nucleus struct {
-	ID              string    `json:"id"`
-	RepoPath        string    `json:"repo_path"`
-	WorktreePath    string    `json:"worktree_path"`
-	Branch          string    `json:"branch"`
-	TaskDescription string    `json:"task_description"`
-
-	// Optional external linkage.
-	JiraKey  string `json:"jira_key,omitempty"`
-	PRNumber int    `json:"pr_number,omitempty"`
-	PRRepo   string `json:"pr_repo,omitempty"`
-
-	Neurons []Neuron `json:"neurons"`
-
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Workdir returns the directory that new tmux windows for this nucleus should
-// open in. When a worktree exists it is preferred; otherwise the repo root is
-// used. This covers the case where a nucleus was created without a worktree
-// (e.g. a review nucleus with createWorktree=false).
-func (n *Nucleus) Workdir() string {
-	if n.WorktreePath != "" {
-		return n.WorktreePath
+// Workdir returns the working directory for this neuron: the worktree when one
+// exists, otherwise the repo root.
+func (neu *Neuron) Workdir() string {
+	if neu.WorktreePath != "" {
+		return neu.WorktreePath
 	}
-	return n.RepoPath
+	return neu.RepoPath
+}
+
+// PullRequest records an external pull request linked to a Nucleus.
+type PullRequest struct {
+	Number int    `json:"number"`
+	Repo   string `json:"repo"`
+	URL    string `json:"url,omitempty"`
+}
+
+// Nucleus is the top-level unit of work. It is a logical grouping of neurons
+// (one per repo/task slice) and may be linked to an optional Jira ticket and
+// any number of pull requests.
+type Nucleus struct {
+	ID              string        `json:"id"`
+	TaskDescription string        `json:"task_description"`
+	JiraKey         string        `json:"jira_key,omitempty"`
+	PullRequests    []PullRequest `json:"pull_requests,omitempty"`
+	Neurons         []Neuron      `json:"neurons"`
+	Status          string        `json:"status"`
+	CreatedAt       time.Time     `json:"created_at"`
+}
+
+// Workdir returns the working directory for this nucleus by delegating to the
+// primary neuron. Returns "" when there are no neurons.
+func (n *Nucleus) Workdir() string {
+	if neu := n.PrimaryNeuron(); neu != nil {
+		return neu.Workdir()
+	}
+	return ""
+}
+
+// PrimaryBranch returns the branch of the primary neuron, or "" if there are none.
+func (n *Nucleus) PrimaryBranch() string {
+	if neu := n.PrimaryNeuron(); neu != nil {
+		return neu.Branch
+	}
+	return ""
 }
 
 // FindNeuronByID returns a pointer to the Neuron with the given ID.

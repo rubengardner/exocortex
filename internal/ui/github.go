@@ -523,8 +523,10 @@ func (m Model) viewGitHubDetailStatusBar() string {
 // or "" when none is found.
 func (m Model) prLinkedNucleusID(pr *github.PRDetail) string {
 	for _, n := range m.nuclei {
-		if n.PRNumber == pr.Number && n.PRRepo == pr.Repo {
-			return n.ID
+		for _, linked := range n.PullRequests {
+			if linked.Number == pr.Number && linked.Repo == pr.Repo {
+				return n.ID
+			}
 		}
 	}
 	return ""

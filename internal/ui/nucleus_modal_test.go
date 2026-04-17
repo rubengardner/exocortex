@@ -649,11 +649,11 @@ func TestNucleusModal_Submit_ReviewMode(t *testing.T) {
 	if sub.Branch != "feat/oauth" {
 		t.Fatalf("expected branch='feat/oauth', got %q", sub.Branch)
 	}
-	if sub.PRNumber != 7 {
-		t.Fatalf("expected PRNumber=7, got %d", sub.PRNumber)
+	if sub.PR.Number != 7 {
+		t.Fatalf("expected PR.Number=7, got %d", sub.PR.Number)
 	}
-	if sub.PRRepo != "org/repo" {
-		t.Fatalf("expected PRRepo='org/repo', got %q", sub.PRRepo)
+	if sub.PR.Repo != "org/repo" {
+		t.Fatalf("expected PR.Repo='org/repo', got %q", sub.PR.Repo)
 	}
 }
 

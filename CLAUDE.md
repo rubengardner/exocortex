@@ -59,25 +59,47 @@ docs/
 
 ```go
 type Registry struct {
-    Agents []Agent `json:"agents"`
+    Version int       `json:"version"` // 3 (current)
+    Nuclei  []Nucleus `json:"nuclei"`
 }
 
-type Agent struct {
-    ID              string    // e.g. "fixaut", "fixaut2"
-    RepoPath        string    // absolute path to git repo root
-    WorktreePath    string    // absolute path: <RepoPath>/.worktrees/<ID>
-    Branch          string    // e.g. "agent/fixaut"
+// Nucleus is a logical unit of work. It groups neurons and tracks external linkage.
+// It does NOT own a repo/branch/worktree — those belong to each Neuron.
+type Nucleus struct {
+    ID              string        // e.g. "fixaut", "fixaut2"
     TaskDescription string
-    TmuxTarget      string    // "session:window.pane" — Claude pane
-    NvimTarget      string    // "session:window.pane" — Nvim pane; "" if not open
-    Profile         string    // CLAUDE_CONFIG_DIR path used to launch claude (e.g. "~/.claude-work")
-    Status          string    // "idle" | "working" | "blocked"
+    JiraKey         string        // optional Jira issue key
+    PullRequests    []PullRequest // zero or more linked PRs
+    Neurons         []Neuron
+    Status          string        // "idle" | "working" | "blocked"
     CreatedAt       time.Time
-    LastFile        string    // optional; last opened file
+}
+
+// PullRequest records an external PR linked to a Nucleus.
+type PullRequest struct {
+    Number int
+    Repo   string
+    URL    string // optional
+}
+
+// Neuron is a running process (tmux pane) inside a Nucleus.
+// Each Neuron owns its own repo, worktree, and branch so one Nucleus can
+// span multiple repositories simultaneously.
+type Neuron struct {
+    ID           string     // e.g. "c1", "c2", "nvim", "sh1"
+    Type         NeuronType // "claude" | "nvim" | "shell"
+    TmuxTarget   string     // "session:window.pane"
+    Profile      string     // CLAUDE_CONFIG_DIR path (claude neurons only)
+    Status       string     // "idle" | "working" | "blocked"
+    RepoPath     string     // absolute path to git repo root
+    WorktreePath string     // absolute path to worktree (empty = use RepoPath)
+    Branch       string     // branch this neuron is working on
 }
 ```
 
 Registry file is always written atomically via temp-file + `os.Rename`.
+Legacy v1 (agents) and v2 (nucleus-level repo/branch/worktree) registries are
+auto-migrated to v3 on load.
 
 ---
 
