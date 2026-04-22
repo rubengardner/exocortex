@@ -369,10 +369,11 @@ func (m Model) viewNeuronAddPhase1() string {
 	if len(repos) == 0 {
 		repos = []string{"."}
 	}
+	scrollStart := max(0, m.neuronAddRepoCursor-maxShow+1)
+	shown := 0
 	for i, r := range repos {
-		if i >= maxShow {
-			sb.WriteString(StyleDim.Render("  … more") + "\n")
-			break
+		if i < scrollStart || shown >= maxShow {
+			continue
 		}
 		base := filepath.Base(r)
 		if i == m.neuronAddRepoCursor {
@@ -380,6 +381,17 @@ func (m Model) viewNeuronAddPhase1() string {
 		} else {
 			sb.WriteString("    " + truncate(base, 30) + "\n")
 		}
+		shown++
+	}
+	for shown < maxShow {
+		sb.WriteString("\n")
+		shown++
+	}
+	remaining := len(repos) - (scrollStart + maxShow)
+	if remaining > 0 {
+		sb.WriteString(StyleDim.Render(fmt.Sprintf("  … %d more", remaining)) + "\n")
+	} else {
+		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
@@ -472,21 +484,39 @@ func (m Model) viewNeuronAddPhase3Existing() string {
 	sb.WriteString(StyleLabel.Render("Filter") + "  " + m.neuronAddFilter + "█\n\n")
 
 	filtered := neuronAddFilteredBranches(m.neuronAddExisting, m.neuronAddFilter)
+	const maxShow = 6
 	if len(filtered) == 0 {
-		sb.WriteString(StyleDim.Render("  no branches") + "\n")
+		for i := 0; i < maxShow; i++ {
+			if i == 0 {
+				sb.WriteString(StyleDim.Render("  no branches") + "\n")
+			} else {
+				sb.WriteString("\n")
+			}
+		}
 	} else {
-		const maxShow = 6
+		scrollStart := max(0, m.neuronAddExistCursor-maxShow+1)
+		shown := 0
 		for i, b := range filtered {
-			if i >= maxShow {
-				sb.WriteString(StyleDim.Render(fmt.Sprintf("  … %d more", len(filtered)-maxShow)) + "\n")
-				break
+			if i < scrollStart || shown >= maxShow {
+				continue
 			}
 			if i == m.neuronAddExistCursor {
 				sb.WriteString(StyleSelected.Render("  > "+truncate(b, 35)) + "\n")
 			} else {
 				sb.WriteString("    " + truncate(b, 35) + "\n")
 			}
+			shown++
 		}
+		for shown < maxShow {
+			sb.WriteString("\n")
+			shown++
+		}
+	}
+	remaining := len(filtered) - (max(0, m.neuronAddExistCursor-maxShow+1) + maxShow)
+	if remaining > 0 {
+		sb.WriteString(StyleDim.Render(fmt.Sprintf("  … %d more", remaining)) + "\n")
+	} else {
+		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
