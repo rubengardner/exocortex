@@ -11,10 +11,11 @@ import (
 )
 
 // executeAddNeuron adds a new Neuron of the given type to an existing Nucleus.
-// When branch is non-empty a git worktree is created at repoPath/.worktrees/<nucleusID>-<neuronID>.
+// createWorktree=true creates an isolated git worktree at repoPath/.worktrees/<nucleusID>-<neuronID>;
+// false (the default) opens the neuron directly in the repo directory on the selected branch.
 // createBranch=true creates a new branch (optionally from baseBranch); false checks out an existing one.
 // For claude neurons, CLAUDE_CONFIG_DIR is read from the nucleus's Profile field.
-func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
+func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string, createWorktree, createBranch bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
 	r, err := reg.Load()
 	if err != nil {
 		return err
@@ -33,11 +34,21 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string
 
 	var worktreePath string
 	if branch != "" && repoPath != "" {
-		worktreePath = filepath.Join(repoPath, ".worktrees", nucleusID+"-"+neuronID)
-		if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, baseBranch); err != nil {
-			return fmt.Errorf("add worktree: %w", err)
+		if createWorktree {
+			worktreePath = filepath.Join(repoPath, ".worktrees", nucleusID+"-"+neuronID)
+			if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, baseBranch); err != nil {
+				return fmt.Errorf("add worktree: %w", err)
+			}
+			workdir = worktreePath
+		} else if createBranch {
+			if err := gt.CheckoutNewBranch(repoPath, branch, baseBranch); err != nil {
+				return fmt.Errorf("git checkout -b %s: %w", branch, err)
+			}
+		} else {
+			if err := gt.Checkout(repoPath, branch); err != nil {
+				return fmt.Errorf("git checkout %s: %w", branch, err)
+			}
 		}
-		workdir = worktreePath
 	}
 
 	target, err := tm.NewWindow(workdir, neuronType+"-"+nucleusID)

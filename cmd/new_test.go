@@ -85,6 +85,7 @@ func (g *fakeGit) BranchExists(repoPath, branch string) (bool, error)        { r
 func (g *fakeGit) AheadCommits(worktreePath string) ([]string, error)        { return nil, nil }
 func (g *fakeGit) ListBranches(repoPath string) ([]string, error)            { return nil, nil }
 func (g *fakeGit) Checkout(repoPath, branch string) error                    { g.checkoutBranch = branch; return g.checkoutErr }
+func (g *fakeGit) CheckoutNewBranch(repoPath, branch, baseBranch string) error { return nil }
 
 // ── shared fake tmux ──────────────────────────────────────────────────────────
 

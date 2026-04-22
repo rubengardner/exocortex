@@ -105,8 +105,8 @@ func buildServices() ui.Services {
 			}
 			return tm.SelectPane(neu.TmuxTarget)
 		},
-		AddNeuron: func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error {
-			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch, createBranch, reg, gt, tm)
+		AddNeuron: func(nucleusID, neuronType, repoPath, branch, baseBranch string, createWorktree, createBranch bool) error {
+			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch, createWorktree, createBranch, reg, gt, tm)
 		},
 		AddPullRequest: func(nucleusID string, pr registry.PullRequest) error {
 			return registry.AddPullRequest(registry.DefaultPath(), nucleusID, pr)

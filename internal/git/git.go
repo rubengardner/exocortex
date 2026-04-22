@@ -120,6 +120,17 @@ func (g *Git) Checkout(repoPath, branch string) error {
 	return err
 }
 
+// CheckoutNewBranch creates and switches to a new branch in the repo at repoPath.
+// baseBranch sets the start point; empty means current HEAD.
+func (g *Git) CheckoutNewBranch(repoPath, branch, baseBranch string) error {
+	args := []string{"-C", repoPath, "checkout", "-b", branch}
+	if baseBranch != "" {
+		args = append(args, baseBranch)
+	}
+	_, err := g.runner.Run("git", args...)
+	return err
+}
+
 // Returns an empty slice if there are none.
 func (g *Git) ModifiedFiles(worktreePath string) ([]string, error) {
 	out, err := g.runner.Run("git", "-C", worktreePath, "ls-files", "-m")

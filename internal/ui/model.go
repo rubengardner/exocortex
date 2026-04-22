@@ -38,7 +38,7 @@ type Services struct {
 	OpenNvim      func(id string) error
 	CloseNvim     func(id string) error  // nil disables binding
 	RespawnNucleus func(id string) error // nil disables binding
-	AddNeuron     func(nucleusID, neuronType, repoPath, branch, baseBranch string, createBranch bool) error // nil disables neuron add
+	AddNeuron     func(nucleusID, neuronType, repoPath, branch, baseBranch string, createWorktree, createBranch bool) error // nil disables neuron add
 	AddPullRequest func(nucleusID string, pr registry.PullRequest) error    // nil disables PR add
 	LoadBranchInfo func(worktreePath string) (modified []string, aheadCommits []string, err error) // nil = no branch stats
 	// LoadGitHubPRs fetches open PRs matching the given filter; nil disables the GitHub view.

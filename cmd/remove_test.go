@@ -47,6 +47,7 @@ func (g *fakeGitRemove) BranchExists(repoPath, branch string) (bool, error)  { r
 func (g *fakeGitRemove) AheadCommits(worktreePath string) ([]string, error)  { return nil, nil }
 func (g *fakeGitRemove) ListBranches(repoPath string) ([]string, error)      { return nil, nil }
 func (g *fakeGitRemove) Checkout(repoPath, branch string) error              { return nil }
+func (g *fakeGitRemove) CheckoutNewBranch(repoPath, branch, baseBranch string) error { return nil }
 
 type fakeTmuxRemove struct {
 	killCalled    bool

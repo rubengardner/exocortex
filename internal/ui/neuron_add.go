@@ -95,7 +95,7 @@ func (m Model) updateNeuronAddPhase1(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = stateNucleusDetail
 			m.neuronAddPhase = 0
 			return m, func() tea.Msg {
-				return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, "", "", false)}
+				return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, "", "", false, false)}
 			}
 		}
 
@@ -113,7 +113,16 @@ func (m Model) updateNeuronAddPhase1(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// Phase 2: branch mode picker (new / existing).
+// neuronAddBranchModes lists the branch/workspace options shown in phase 2.
+// Modes 0-1 open in the normal workspace; modes 2-3 create an isolated worktree.
+var neuronAddBranchModes = []string{
+	"new branch",
+	"existing branch",
+	"new branch (worktree)",
+	"existing branch (worktree)",
+}
+
+// Phase 2: branch mode picker (new / existing, with optional worktree).
 func (m Model) updateNeuronAddPhase2(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchKey(msg, m.keys.Cancel):
@@ -126,7 +135,7 @@ func (m Model) updateNeuronAddPhase2(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case matchKey(msg, m.keys.Down):
-		if m.neuronAddBranchMode < 1 {
+		if m.neuronAddBranchMode < len(neuronAddBranchModes)-1 {
 			m.neuronAddBranchMode++
 		}
 
@@ -136,7 +145,10 @@ func (m Model) updateNeuronAddPhase2(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.neuronAddBaseChosen = false
 		m.neuronAddSelectedBase = ""
 
-		if m.neuronAddBranchMode == 0 {
+		// Modes 0 and 2 = new branch; modes 1 and 3 = existing branch.
+		isNewBranch := m.neuronAddBranchMode == 0 || m.neuronAddBranchMode == 2
+
+		if isNewBranch {
 			// New branch: initialise branch name input.
 			bi := textinput.New()
 			bi.Placeholder = "feature/branch-name"
@@ -167,7 +179,8 @@ func (m Model) updateNeuronAddPhase2(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // Phase 3: branch details (new or existing).
 func (m Model) updateNeuronAddPhase3(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.neuronAddBranchMode == 1 {
+	// Modes 1 and 3 = existing branch; modes 0 and 2 = new branch.
+	if m.neuronAddBranchMode == 1 || m.neuronAddBranchMode == 3 {
 		return m.updateNeuronAddPhase3Existing(msg)
 	}
 	return m.updateNeuronAddPhase3New(msg)
@@ -215,12 +228,13 @@ func (m Model) updateNeuronAddPhase3New(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		neuronType := neuronTypes[m.neuronAddCursor]
 		nucleusID := m.neuronAddNucleusID
 		baseBranch := m.neuronAddSelectedBase
+		createWorktree := m.neuronAddBranchMode == 2
 		svc := m.services.AddNeuron
 		m.state = stateNucleusDetail
 		m.neuronAddPhase = 0
 		m.neuronAddBranch.Blur()
 		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, branch, baseBranch, true)}
+			return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, branch, baseBranch, createWorktree, true)}
 		}
 	}
 
@@ -263,12 +277,13 @@ func (m Model) updateNeuronAddPhase3Existing(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		}
 		neuronType := neuronTypes[m.neuronAddCursor]
 		nucleusID := m.neuronAddNucleusID
+		createWorktree := m.neuronAddBranchMode == 3
 		svc := m.services.AddNeuron
 		m.state = stateNucleusDetail
 		m.neuronAddPhase = 0
 		m.neuronAddFilter = ""
 		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, branch, "", false)}
+			return actionDoneMsg{err: svc(nucleusID, neuronType, repoPath, branch, "", createWorktree, false)}
 		}
 
 	case msg.Type == tea.KeyBackspace || msg.Type == tea.KeyDelete:
@@ -381,10 +396,9 @@ func (m Model) viewNeuronAddPhase2() string {
 	var sb strings.Builder
 	neuronType := neuronTypes[m.neuronAddCursor]
 	sb.WriteString(StyleTitle.Render("Add Neuron · "+neuronType) + "\n\n")
-	sb.WriteString(StyleLabel.Render("Branch") + "\n")
+	sb.WriteString(StyleLabel.Render("Branch / Workspace") + "\n")
 
-	modes := []string{"new branch", "existing branch"}
-	for i, mode := range modes {
+	for i, mode := range neuronAddBranchModes {
 		if i == m.neuronAddBranchMode {
 			sb.WriteString(StyleSelected.Render("  ▶ "+mode) + "\n")
 		} else {
@@ -403,7 +417,7 @@ func (m Model) viewNeuronAddPhase2() string {
 }
 
 func (m Model) viewNeuronAddPhase3() string {
-	if m.neuronAddBranchMode == 1 {
+	if m.neuronAddBranchMode == 1 || m.neuronAddBranchMode == 3 {
 		return m.viewNeuronAddPhase3Existing()
 	}
 	return m.viewNeuronAddPhase3New()

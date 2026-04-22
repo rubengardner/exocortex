@@ -106,6 +106,7 @@ func (g *fakeGitNeuronAdd) BranchExists(repoPath, branch string) (bool, error) {
 func (g *fakeGitNeuronAdd) AheadCommits(worktreePath string) ([]string, error) { return nil, nil }
 func (g *fakeGitNeuronAdd) ListBranches(repoPath string) ([]string, error)     { return nil, nil }
 func (g *fakeGitNeuronAdd) Checkout(repoPath, branch string) error             { return nil }
+func (g *fakeGitNeuronAdd) CheckoutNewBranch(repoPath, branch, baseBranch string) error { return nil }
 
 func TestExecuteAddNeuron_Claude(t *testing.T) {
 	reg := &fakeRegistryNeuronAdd{
@@ -121,7 +122,7 @@ func TestExecuteAddNeuron_Claude(t *testing.T) {
 	tm := &fakeTmuxNeuronAdd{}
 	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "", "", "", false, reg, gt, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "", false, false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestExecuteAddNeuron_Shell(t *testing.T) {
 	tm := &fakeTmuxNeuronAdd{}
 	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm)
+	err := executeAddNeuron("nucl1", "shell", "", "", "", false, false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestExecuteAddNeuron_WithClaudeConfigDir(t *testing.T) {
 	tm := &fakeTmuxNeuronAdd{}
 	gt := &fakeGitNeuronAdd{}
 
-	err := executeAddNeuron("nucl1", "claude", "", "", "", false, reg, gt, tm)
+	err := executeAddNeuron("nucl1", "claude", "", "", "", false, false, reg, gt, tm)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -203,7 +204,7 @@ func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
 	tm := &fakeTmuxNeuronAdd{}
 	gt := &fakeGitNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, false, reg, gt, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo/.worktrees/nucl1" {
@@ -255,7 +256,7 @@ func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
 	tm := &fakeTmuxNeuronAdd{}
 	gt := &fakeGitNeuronAdd{}
 
-	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, reg, gt, tm); err != nil {
+	if err := executeAddNeuron("nucl1", "shell", "", "", "", false, false, reg, gt, tm); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if tm.newWindowDir != "/repo" {

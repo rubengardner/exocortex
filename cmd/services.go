@@ -13,6 +13,7 @@ type gitSvc interface {
 	AheadCommits(worktreePath string) ([]string, error)
 	ListBranches(repoPath string) ([]string, error)
 	Checkout(repoPath, branch string) error
+	CheckoutNewBranch(repoPath, branch, baseBranch string) error
 }
 
 type tmuxSvc interface {
