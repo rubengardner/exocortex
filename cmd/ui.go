@@ -106,7 +106,16 @@ func buildServices() ui.Services {
 			return tm.SelectPane(neu.TmuxTarget)
 		},
 		AddNeuron: func(nucleusID, neuronType, repoPath, branch, baseBranch string, createWorktree, createBranch bool) error {
-			return executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch, createWorktree, createBranch, reg, gt, tm)
+			if err := executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch, createWorktree, createBranch, reg, gt, tm); err != nil {
+				return err
+			}
+			if neuronType == string(registry.NeuronClaude) {
+				autoLinkPRForBranch(nucleusID, repoPath, branch)
+			}
+			return nil
+		},
+		RemoveNeuron: func(nucleusID, neuronID string) error {
+			return executeRemoveNeuron(nucleusID, neuronID, reg, gt, tm)
 		},
 		AddPullRequest: func(nucleusID string, pr registry.PullRequest) error {
 			return registry.AddPullRequest(registry.DefaultPath(), nucleusID, pr)
@@ -216,6 +225,36 @@ func buildServices() ui.Services {
 			return exec.Command("open", url).Start()
 		},
 	}
+}
+
+// autoLinkPRForBranch looks up an open GitHub PR for the given branch and
+// attaches it to the nucleus registry entry. Best-effort: errors are silently
+// ignored so neuron creation is never blocked by a failed PR lookup.
+func autoLinkPRForBranch(nucleusID, repoPath, branch string) {
+	if branch == "" {
+		return
+	}
+	cfg, err := iconfig.Load(iconfig.DefaultPath())
+	if err != nil || cfg.GitHub == nil {
+		return
+	}
+	repoName := filepath.Base(repoPath)
+	repoFull := cfg.GitHub.Org + "/" + repoName
+	client := igithub.New("https://api.github.com", cfg.GitHub.Token, cfg.GitHub.Org)
+	query := igithub.BuildQuery(cfg.GitHub.MyLogin, cfg.GitHub.Org, igithub.PRFilter{
+		Repos:      []string{repoFull},
+		HeadBranch: branch,
+	})
+	prs, err := client.ListPRs(query)
+	if err != nil || len(prs) == 0 {
+		return
+	}
+	pr := prs[0]
+	_ = registry.AddPullRequest(registry.DefaultPath(), nucleusID, registry.PullRequest{
+		Number: pr.Number,
+		Repo:   pr.Repo,
+		URL:    pr.URL,
+	})
 }
 
 // resolveRepoPath maps a "org/repo" short name to the matching local repo path

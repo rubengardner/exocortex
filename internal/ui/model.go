@@ -33,6 +33,7 @@ type Services struct {
 	// profile is the CLAUDE_CONFIG_DIR path (from nucleus-level profile selection).
 	CreateNucleus func(task, jiraKey, profile string) error
 	RemoveNucleus func(id string) error
+	RemoveNeuron  func(nucleusID, neuronID string) error // nil disables neuron delete
 	GotoNucleus   func(id string) error
 	GotoNeuron    func(nucleusID, neuronID string) error            // nil falls back to GotoNucleus
 	OpenNvim      func(id string) error
@@ -86,7 +87,8 @@ type Model struct {
 	prevState    viewState // state to restore when modal is cancelled
 
 	// confirm-delete
-	confirmID string
+	confirmID       string // nucleus ID to delete
+	confirmNeuronID string // neuron ID to delete (empty = nucleus deletion)
 
 	// live pane preview
 	previewEnabled bool   // global toggle; default true
@@ -240,9 +242,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(m.nuclei) && len(m.nuclei) > 0 {
 			m.cursor = len(m.nuclei) - 1
 		}
-		// Kick off the preview tick once, on first successful load.
+		// Kick off the preview tick once on first load (used by stateNucleusDetail).
 		if firstLoad {
-			return m, tea.Batch(m.tickCmd(), m.capturePaneCmd())
+			return m, m.tickCmd()
 		}
 		return m, nil
 
@@ -591,7 +593,7 @@ func (m Model) viewMain() string {
 
 	header := m.viewHeader()
 	list := clipLines(m.viewNucleusList(listWidth), h)
-	detail := clipLines(m.viewNucleusDetail(detailWidth), h)
+	detail := clipLines(m.viewNucleusSummary(detailWidth), h)
 
 	listPane := StyleListPane.Height(h).Width(listWidth).Render(list)
 	detailPane := StyleDetailPane.Height(h).Width(detailWidth).Render(detail)
@@ -621,23 +623,6 @@ func (m Model) tickCmd() tea.Cmd {
 	})
 }
 
-func (m Model) capturePaneCmd() tea.Cmd {
-	if m.services.CapturePane == nil || len(m.nuclei) == 0 || !m.previewEnabled {
-		return nil
-	}
-	n := m.nuclei[m.cursor]
-	primary := n.PrimaryNeuron()
-	if primary == nil {
-		return nil
-	}
-	target := primary.TmuxTarget
-	svc := m.services.CapturePane
-	return func() tea.Msg {
-		content, err := svc(target)
-		return paneCapturedMsg{content: content, err: err}
-	}
-}
-
 func (m Model) loadNucleiCmd() tea.Cmd {
 	svc := m.services.LoadNuclei
 	return func() tea.Msg {
@@ -646,13 +631,13 @@ func (m Model) loadNucleiCmd() tea.Cmd {
 	}
 }
 
-// captureActivePaneCmd captures the relevant pane based on current state:
-// in StateNucleusDetail it captures the selected neuron; otherwise the primary neuron.
+// captureActivePaneCmd captures the relevant pane based on current state.
+// Only fires in stateNucleusDetail — the list view no longer shows a preview.
 func (m Model) captureActivePaneCmd() tea.Cmd {
 	if m.state == stateNucleusDetail {
 		return m.captureDetailPaneCmd()
 	}
-	return m.capturePaneCmd()
+	return nil
 }
 
 // captureDetailPaneCmd captures the tmux pane for the selected neuron in the detail view.

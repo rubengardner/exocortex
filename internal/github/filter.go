@@ -13,6 +13,10 @@ type PRFilter struct {
 	// Repos is the set of "owner/repo" strings to include.
 	// Empty = no repo filter. Applied client-side after the API response.
 	Repos []string
+
+	// HeadBranch filters PRs by head branch name when non-empty.
+	// Maps to the head:<branch> GitHub search qualifier.
+	HeadBranch string
 }
 
 // IsZero reports whether no filter criteria are set.
@@ -41,6 +45,10 @@ func BuildQuery(myLogin, org string, f PRFilter) string {
 				parts = append(parts, "author:"+a)
 			}
 		}
+	}
+
+	if f.HeadBranch != "" {
+		parts = append(parts, "head:"+f.HeadBranch)
 	}
 
 	if org != "" {

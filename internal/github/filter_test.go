@@ -104,6 +104,21 @@ func TestBuildQuery_BaseFragments(t *testing.T) {
 	}
 }
 
+func TestBuildQuery_HeadBranch(t *testing.T) {
+	q := igithub.BuildQuery("ruben", "", igithub.PRFilter{HeadBranch: "agent/fixaut"})
+	if !strings.Contains(q, "head:agent/fixaut") {
+		t.Errorf("want 'head:agent/fixaut', got %q", q)
+	}
+}
+
+func TestBuildQuery_HeadBranch_EmptyIsIgnored(t *testing.T) {
+	with := igithub.BuildQuery("ruben", "", igithub.PRFilter{HeadBranch: ""})
+	without := igithub.BuildQuery("ruben", "", igithub.PRFilter{})
+	if with != without {
+		t.Errorf("empty HeadBranch should not change query:\n  with=%q\n  without=%q", with, without)
+	}
+}
+
 // ── ApplyRepoFilter ───────────────────────────────────────────────────────────
 
 func makePR(repo string) igithub.PR {

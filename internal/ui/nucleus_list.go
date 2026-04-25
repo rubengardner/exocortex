@@ -22,16 +22,14 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case matchKey(msg, m.keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
-			m.paneContent = ""
 		}
-		return m, m.capturePaneCmd()
+		return m, nil
 
 	case matchKey(msg, m.keys.Down):
 		if m.cursor < len(m.nuclei)-1 {
 			m.cursor++
-			m.paneContent = ""
 		}
-		return m, m.capturePaneCmd()
+		return m, nil
 
 	case matchKey(msg, m.keys.Refresh):
 		return m, m.loadNucleiCmd()
@@ -86,14 +84,6 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return actionDoneMsg{err: svc(id)}
 		}
-
-	case matchKey(msg, m.keys.TogglePreview):
-		m.previewEnabled = !m.previewEnabled
-		if m.previewEnabled {
-			m.paneContent = ""
-			return m, m.capturePaneCmd()
-		}
-		return m, nil
 
 	case matchKey(msg, m.keys.Board):
 		m.state = stateJiraBoard

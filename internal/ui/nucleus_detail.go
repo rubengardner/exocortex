@@ -108,6 +108,23 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.branchAheadCommits = nil
 		return m, m.loadBranchInfoCmd()
 
+	case matchKey(msg, m.keys.Delete):
+		if len(m.nuclei) == 0 || m.services.RemoveNeuron == nil {
+			return m, nil
+		}
+		n := m.nuclei[m.cursor]
+		if len(n.Neurons) == 0 {
+			return m, nil
+		}
+		idx := m.detailNeuronIdx
+		if idx >= len(n.Neurons) {
+			idx = 0
+		}
+		m.confirmID = n.ID
+		m.confirmNeuronID = n.Neurons[idx].ID
+		m.state = stateConfirmDelete
+		return m, nil
+
 	case matchKey(msg, m.keys.TogglePreview):
 		m.previewEnabled = !m.previewEnabled
 		if m.previewEnabled {
@@ -331,7 +348,7 @@ func (m Model) viewDetailStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   P add PR   p preview   r refresh")
+	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   d del neuron   P add PR   p preview   r refresh")
 }
 
 // firstLine returns the first non-empty line of s, useful for PR body previews.
@@ -345,71 +362,91 @@ func firstLine(s string) string {
 	return s
 }
 
-// ── Right panel in the main list view (unchanged) ─────────────────────────────
+// ── Right panel in the main list view ────────────────────────────────────────
 
-// viewNucleusDetail renders the right-panel detail for the selected nucleus
-// in the main list view (StateList).
-func (m Model) viewNucleusDetail(width int) string {
+// viewNucleusSummary renders the right-panel summary card for the selected
+// nucleus in StateList. Shows agent/nvim counts, per-neuron branch+repo, and
+// any linked Jira ticket or PRs. No network calls — data comes from registry.
+func (m Model) viewNucleusSummary(width int) string {
 	if len(m.nuclei) == 0 {
 		return ""
 	}
 	n := m.nuclei[m.cursor]
+	sep := StyleDim.Render(strings.Repeat("─", clamp(width-4, 4, 60)))
 
 	var sb strings.Builder
 
+	// ── Title ─────────────────────────────────────────────────────────────────
 	sb.WriteString(StyleTitle.Render(truncate(n.TaskDescription, width-4)) + "\n")
-	sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-4, 4, 60))) + "\n")
-	field := func(label, value string) string {
-		return StyleLabel.Render(label) + StyleValue.Render(truncate(value, width-16)) + "\n"
-	}
-	sb.WriteString(field("ID", n.ID))
-	sb.WriteString(field("Branch", n.PrimaryBranch()))
-	sb.WriteString(StyleLabel.Render("Status") + StatusDot(n.Status) + " " + n.Status + "\n")
-	primaryTarget := "—"
-	if primary := n.PrimaryNeuron(); primary != nil {
-		primaryTarget = primary.TmuxTarget
-	}
-	sb.WriteString(field("Claude", primaryTarget))
-	nvimVal := "—"
-	if nvim := n.NvimNeuron(); nvim != nil && nvim.TmuxTarget != "" {
-		nvimVal = nvim.TmuxTarget
-	}
-	sb.WriteString(field("Nvim", nvimVal))
+	sb.WriteString(sep + "\n")
 
-	headerLines := 7
-
-	previewHeaderLines := 2
-	previewLines := m.contentHeight() - headerLines - previewHeaderLines
-	if previewLines < 1 {
-		previewLines = 1
-	}
-
-	sb.WriteString("\n")
-	previewLabel := "── Preview "
-	if !m.previewEnabled {
-		previewLabel = "── Preview [off] "
-	}
-	sb.WriteString(StyleDim.Render(previewLabel+strings.Repeat("─", clamp(width-len(previewLabel)-4, 4, 40))) + "\n")
-
-	if !m.previewEnabled {
-		sb.WriteString(StyleDim.Render("  press p to enable"))
-	} else if m.services.CapturePane == nil {
-		sb.WriteString(StyleDim.Render("  (preview not available)"))
-	} else if m.paneContent == "" {
-		sb.WriteString(StyleDim.Render("  loading…"))
-	} else {
-		lines := strings.Split(strings.TrimRight(m.paneContent, "\n"), "\n")
-		for i, l := range lines {
-			lines[i] = strings.TrimRight(l, " ")
+	// ── Counts ────────────────────────────────────────────────────────────────
+	var claudeCount, nvimCount int
+	var claudeDots strings.Builder
+	for _, neu := range n.Neurons {
+		switch neu.Type {
+		case registry.NeuronClaude:
+			claudeCount++
+			claudeDots.WriteString(StatusDot(neu.Status))
+		case registry.NeuronNvim:
+			nvimCount++
 		}
-		for len(lines) > 0 && lines[len(lines)-1] == "" {
-			lines = lines[:len(lines)-1]
+	}
+
+	dotsStr := claudeDots.String()
+	if claudeCount == 0 {
+		dotsStr = StyleDim.Render("─")
+	}
+	agentsStr := fmt.Sprintf("%d agent(s)  %s", claudeCount, dotsStr)
+	nvimStr := fmt.Sprintf("nvim  %d", nvimCount)
+	sb.WriteString(" " + agentsStr + "\n")
+	sb.WriteString(" " + StyleDim.Render(nvimStr) + "\n")
+
+	// ── Neurons ───────────────────────────────────────────────────────────────
+	if len(n.Neurons) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(" " + StyleDim.Render("── Neurons "+strings.Repeat("─", clamp(width-14, 2, 50))) + "\n")
+		for _, neu := range n.Neurons {
+			var icon string
+			switch neu.Type {
+			case registry.NeuronClaude:
+				icon = StatusDot(neu.Status)
+			case registry.NeuronNvim:
+				icon = StyleDim.Render("◆")
+			default:
+				icon = StyleDim.Render("○")
+			}
+			repoBase := filepath.Base(neu.RepoPath)
+			branch := neu.Branch
+			if branch == "" {
+				branch = "—"
+			}
+			if repoBase == "" || repoBase == "." {
+				repoBase = "—"
+			}
+			idStr := truncate(neu.ID, 6)
+			branchStr := truncate(branch, width/2-8)
+			repoStr := StyleDim.Render(truncate(repoBase, width/3))
+			sb.WriteString(fmt.Sprintf("  %s %-6s  %s  %s\n", icon, idStr, branchStr, repoStr))
 		}
-		if len(lines) > previewLines {
-			lines = lines[len(lines)-previewLines:]
+	}
+
+	// ── Links (Jira + PRs) ────────────────────────────────────────────────────
+	if n.JiraKey != "" || len(n.PullRequests) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(" " + StyleDim.Render("── Links "+strings.Repeat("─", clamp(width-12, 2, 50))) + "\n")
+
+		if n.JiraKey != "" {
+			jiraStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8"))
+			sb.WriteString("  " + jiraStyle.Render(n.JiraKey) + "\n")
 		}
-		for _, l := range lines {
-			sb.WriteString(fmt.Sprintf("%s\n", truncate(l, width-2)))
+		for _, pr := range n.PullRequests {
+			prStyle := lipgloss.NewStyle().Foreground(ColorAccent)
+			label := fmt.Sprintf("#%d", pr.Number)
+			if pr.Repo != "" {
+				label += "  " + pr.Repo
+			}
+			sb.WriteString("  " + prStyle.Render(truncate(label, width-6)) + "\n")
 		}
 	}
 

@@ -87,6 +87,35 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string
 	return reg.AddNeuron(nucleusID, neuron)
 }
 
+// executeRemoveNeuron kills the neuron's tmux pane, removes its worktree (if any),
+// and deletes it from the registry. Tmux and git failures are best-effort (warned, not fatal).
+func executeRemoveNeuron(nucleusID, neuronID string, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
+	r, err := reg.Load()
+	if err != nil {
+		return err
+	}
+	n, err := r.FindByID(nucleusID)
+	if err != nil {
+		return err
+	}
+	neu, err := n.FindNeuronByID(neuronID)
+	if err != nil {
+		return err
+	}
+
+	if neu.TmuxTarget != "" {
+		if err := tm.KillPane(neu.TmuxTarget); err != nil {
+			fmt.Printf("warning: could not kill tmux pane %s: %v\n", neu.TmuxTarget, err)
+		}
+	}
+	if neu.WorktreePath != "" {
+		if err := gt.RemoveWorktree(neu.RepoPath, neu.WorktreePath); err != nil {
+			fmt.Printf("warning: could not remove worktree %s: %v\n", neu.WorktreePath, err)
+		}
+	}
+	return reg.RemoveNeuron(nucleusID, neuronID)
+}
+
 // executeAppendPRNeuron adds an nvim neuron to an existing nucleus and links a PR.
 // It checks out the existing branch (createBranch=false) into a dedicated worktree.
 func executeAppendPRNeuron(nucleusID, repoPath, branch string, pr registry.PullRequest, reg nucleusSvc, gt gitSvc, tm tmuxSvc, _ io.Writer) error {
