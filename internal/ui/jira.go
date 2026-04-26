@@ -249,12 +249,12 @@ func (m Model) viewJiraBoardBody() string {
 	// Divide width equally; account for numCols-1 separator characters.
 	colWidth := (m.width - (numCols - 1)) / numCols
 
-	// Build separator: h lines of "│" spanning the full body height.
+	// Build separator: h lines of "║" (double vertical) spanning the full body height, accent-colored.
 	sepLines := make([]string, h)
 	for i := range sepLines {
-		sepLines[i] = "│"
+		sepLines[i] = "║"
 	}
-	sep := StyleDim.Render(strings.Join(sepLines, "\n"))
+	sep := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Join(sepLines, "\n"))
 
 	parts := make([]string, 0, numCols*2-1)
 	for ci, status := range m.jiraColumns {
@@ -276,14 +276,18 @@ func (m Model) renderJiraColumn(colIdx int, status string, width, height int) st
 
 	var sb strings.Builder
 
-	// Column header.
-	title := fmt.Sprintf(" %s (%d)", strings.ToUpper(status), len(allIssues))
+	// Column header with accent bar and double line separator.
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+	titleStyle := StyleDim
 	if colIdx == m.jiraColIdx {
-		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
-	} else {
-		sb.WriteString(StyleDim.Render(truncate(title, width-2)) + "\n")
+		titleStyle = StyleValue
 	}
-	sb.WriteString(StyleDim.Render(" "+strings.Repeat("─", clamp(width-4, 4, 60))) + "\n")
+	count := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(fmt.Sprintf("%d", len(allIssues)))
+	lowerStatus := strings.ToLower(status)
+	statusStr := strings.ToUpper(lowerStatus[:1]) + lowerStatus[1:]
+	headerStr := bar + " " + titleStyle.Render(statusStr) + "  " + count
+	sb.WriteString(truncate(headerStr, width-2) + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
 
 	// Compute the visible window.
 	off := 0
@@ -322,7 +326,7 @@ func (m Model) renderJiraColumn(colIdx int, status string, width, height int) st
 			sb.WriteString(StyleDim.Render(truncate(assigneeLine, width-2)) + "\n")
 		}
 		if vi < len(visible)-1 {
-			sb.WriteString("\n")
+			sb.WriteString(StyleDim.Render("  ·") + "\n")
 		}
 	}
 

@@ -186,21 +186,31 @@ func (m Model) viewNucleusDetailDashboard() string {
 
 // viewDetailHeader renders the one-line header for the detail dashboard.
 func (m Model) viewDetailHeader(n registry.Nucleus) string {
-	left := StyleHeader.Render("◈  NUCLEUS " + n.ID + "  •  " + truncate(n.PrimaryBranch(), 40) + "  •  " + n.Status)
+	dot := lipgloss.NewStyle().Foreground(ColorAccent).Render("◈")
+	id := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(n.ID)
+	branch := truncate(n.PrimaryBranch(), 40)
+	branchStr := lipgloss.NewStyle().Foreground(ColorAccent).Render(branch)
+	left := dot + "  " + id + "  " + branchStr
 	right := StyleMuted.Render(fmtAge(n.CreatedAt))
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+	headerLine := left + strings.Repeat(" ", gap) + right
+	// Add a thick separator line below the header for emphasis
+	sep := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", m.width))
+	return headerLine + "\n" + sep
 }
 
 // viewNeuronCluster renders the left panel: the neuron list.
 func (m Model) viewNeuronCluster(n registry.Nucleus, width int) string {
-	title := fmt.Sprintf("NEURONS (%d)", len(n.Neurons))
 	var sb strings.Builder
-	sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
-	sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+	countNum := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(fmt.Sprintf("%d", len(n.Neurons)))
+	headerText := bar + " Neurons  " + countNum
+	sb.WriteString(headerText + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+	sb.WriteString("\n") // Add blank line for breathing room
 
 	if len(n.Neurons) == 0 {
 		sb.WriteString(StyleDim.Render("  no neurons") + "\n")
@@ -209,14 +219,23 @@ func (m Model) viewNeuronCluster(n registry.Nucleus, width int) string {
 
 	for i, neu := range n.Neurons {
 		dot := StatusDot(neu.Status)
-		typeStr := string(neu.Type)
-		idStr := neu.ID
-		row := fmt.Sprintf(" %s %-6s %-8s %s", dot, idStr, typeStr, truncate(neu.TmuxTarget, width-22))
+		// Color the neuron ID and type
+		idStr := lipgloss.NewStyle().Foreground(ColorAccent).Render(neu.ID)
+		typeStr := lipgloss.NewStyle().Foreground(ColorWorking).Render(string(neu.Type))
+		tmuxStr := lipgloss.NewStyle().Foreground(ColorDim).Render(truncate(neu.TmuxTarget, width-22))
+		// Build consistent content: dot + id + type + target
+		content := fmt.Sprintf(" %s %-6s %-8s %s", dot, idStr, typeStr, tmuxStr)
 
 		if i == m.detailNeuronIdx {
-			sb.WriteString(StyleSelected.Width(width).Render("▶"+row[1:]) + "\n")
+			// Selected: indicator bar at the beginning, rest is same
+			indicator := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+			row := indicator + content[1:] // Replace first space with indicator
+			// Apply selected styling without width constraint to prevent wrapping
+			styledRow := lipgloss.NewStyle().Background(ColorSel).Foreground(ColorText).Bold(true).Render(row)
+			sb.WriteString(styledRow + "\n")
 		} else {
-			sb.WriteString(row + "\n")
+			// Unselected: just the content with space
+			sb.WriteString(content + "\n")
 		}
 
 		// Dim second line: branch + repo basename (omitted when both empty).
@@ -224,6 +243,11 @@ func (m Model) viewNeuronCluster(n registry.Nucleus, width int) string {
 			repoBase := filepath.Base(neu.RepoPath)
 			line2 := "  " + truncate(neu.Branch, width/2-4) + "  " + StyleDim.Render(repoBase)
 			sb.WriteString(StyleDim.Render(line2) + "\n")
+		}
+
+		// Separator line between neurons
+		if i < len(n.Neurons)-1 {
+			sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
 		}
 	}
 	return sb.String()
@@ -236,9 +260,10 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 
 	// ── Jira section ──────────────────────────────────────────────────────────
 	for i, jiraKey := range n.JiraKeys {
-		title := "JIRA " + jiraKey
-		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
-		sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+		bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+		keyStyle := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(jiraKey)
+		sb.WriteString(bar + " Jira  " + keyStyle + "\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
 
 		if i == 0 {
 			switch {
@@ -246,12 +271,13 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 				sb.WriteString(StyleDim.Render("  loading…") + "\n")
 			case m.detailJiraIssue != nil:
 				issue := m.detailJiraIssue
-				sb.WriteString(StyleValue.Render("  "+truncate(issue.Summary, width-4)) + "\n")
-				sb.WriteString(StyleLabel.Render("Status") + StyleValue.Render(issue.Status) + "\n")
+				sb.WriteString(lipgloss.NewStyle().Foreground(ColorText).Render("  "+truncate(issue.Summary, width-4)) + "\n")
+				statusColor := lipgloss.NewStyle().Foreground(ColorWorking)
+				sb.WriteString(StyleLabel.Render("Status") + statusColor.Render(issue.Status) + "\n")
 				if issue.Assignee != "" {
 					first := strings.Fields(issue.Assignee)
 					if len(first) > 0 {
-						sb.WriteString(StyleDim.Render("  @"+first[0]) + "\n")
+						sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("  @"+first[0]) + "\n")
 					}
 				}
 				sb.WriteString(StyleDim.Render("  "+truncate(issue.URL, width-4)) + "\n")
@@ -266,18 +292,22 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 
 	// ── GitHub PR section ─────────────────────────────────────────────────────
 	for i, pr := range n.PullRequests {
-		title := fmt.Sprintf("PR #%d", pr.Number)
-		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
-		sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+		bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+		prNum := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(fmt.Sprintf("#%d", pr.Number))
+		sb.WriteString(bar + " Pull request  " + prNum + "\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
 		if i == 0 {
 			switch {
 			case m.detailPRLoading:
 				sb.WriteString(StyleDim.Render("  loading…") + "\n")
 			case m.detailPRDetail != nil:
 				d := m.detailPRDetail
-				diff := fmt.Sprintf("+%d -%d • %d file(s)", d.Additions, d.Deletions, d.ChangedFiles)
-				sb.WriteString(StyleValue.Render("  "+truncate(diff, width-4)) + "\n")
-				sb.WriteString(StyleLabel.Render("Repo") + StyleValue.Render(truncate(pr.Repo, width-10)) + "\n")
+				additions := lipgloss.NewStyle().Foreground(ColorWorking).Render(fmt.Sprintf("+%d", d.Additions))
+				deletions := lipgloss.NewStyle().Foreground(ColorBlocked).Render(fmt.Sprintf("-%d", d.Deletions))
+				files := lipgloss.NewStyle().Foreground(ColorDim).Render(fmt.Sprintf("%d file(s)", d.ChangedFiles))
+				diff := fmt.Sprintf("  %s %s • %s", additions, deletions, files)
+				sb.WriteString(diff + "\n")
+				sb.WriteString(StyleLabel.Render("Repo") + lipgloss.NewStyle().Foreground(ColorText).Render(truncate(pr.Repo, width-10)) + "\n")
 				if d.Body != "" {
 					first := firstLine(d.Body)
 					sb.WriteString(StyleDim.Render("  "+truncate(first, width-4)) + "\n")
@@ -292,8 +322,9 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 	}
 
 	// ── Branch info section ───────────────────────────────────────────────────
-	sb.WriteString(StyleTitle.Render("BRANCH INFO") + "\n")
-	sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+	sb.WriteString(bar + " Branch info\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
 
 	if m.services.LoadBranchInfo == nil {
 		sb.WriteString(StyleDim.Render("  (unavailable)") + "\n")
@@ -305,14 +336,16 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 	}
 
 	modCount := len(m.branchModified)
-	sb.WriteString(StyleLabel.Render("Modified") + StyleValue.Render(fmt.Sprintf("%d file(s)", modCount)) + "\n")
+	modCountStr := lipgloss.NewStyle().Foreground(ColorBlocked).Render(fmt.Sprintf("%d file(s)", modCount))
+	sb.WriteString(StyleLabel.Render("Modified") + modCountStr + "\n")
 	for _, f := range m.branchModified {
 		sb.WriteString(StyleDim.Render("  "+truncate(f, width-4)) + "\n")
 	}
 
 	aheadCount := len(m.branchAheadCommits)
 	sb.WriteString("\n")
-	sb.WriteString(StyleLabel.Render("Ahead") + StyleValue.Render(fmt.Sprintf("%d commit(s)", aheadCount)) + "\n")
+	aheadCountStr := lipgloss.NewStyle().Foreground(ColorWorking).Render(fmt.Sprintf("%d commit(s)", aheadCount))
+	sb.WriteString(StyleLabel.Render("Ahead") + aheadCountStr + "\n")
 	for _, c := range m.branchAheadCommits {
 		sb.WriteString(StyleDim.Render("  "+truncate(c, width-4)) + "\n")
 	}
@@ -323,13 +356,13 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 // viewDetailPreview renders the right panel: live pane preview of the selected neuron.
 func (m Model) viewDetailPreview(width int) string {
 	var sb strings.Builder
-	sb.WriteString(StyleTitle.Render("LIVE PREVIEW") + "\n")
-
-	previewLabel := "─"
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+	status := ""
 	if !m.previewEnabled {
-		previewLabel = "─ [off] "
+		status = " [off]"
 	}
-	sb.WriteString(StyleDim.Render(previewLabel+strings.Repeat("─", clamp(width-len(previewLabel)-2, 4, 60))) + "\n")
+	sb.WriteString(bar + " Live preview" + StyleMuted.Render(status) + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
 
 	if !m.previewEnabled {
 		sb.WriteString(StyleDim.Render("  press p to enable"))
@@ -371,7 +404,12 @@ func (m Model) viewDetailStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   d del neuron   P add PR   o jira   p preview   r refresh")
+	// Context-sensitive key hints for the detail view
+	hints := "  q back · j/k neurons · g goto · e edit · d delete · p preview"
+	if m.services.AddNeuron != nil {
+		hints = "  q back · j/k neurons · g goto · a add · d delete · p preview"
+	}
+	return StyleHelp.Render(hints)
 }
 
 // firstLine returns the first non-empty line of s, useful for PR body previews.

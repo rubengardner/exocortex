@@ -276,39 +276,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case reposLoadedMsg:
-		if msg.err != nil {
-			m.lastErr = msg.err.Error()
-			if m.state == stateNucleusModal {
-				m.state = m.prevState
-			}
-		} else {
-			repos := msg.repos
-			if len(repos) == 0 {
-				repos = []string{"."}
-			}
-			m.nucleusModal = m.nucleusModal.SetRepos(repos)
-			// In review mode the repo is now resolved; load branches immediately.
-			if m.state == stateNucleusModal && m.nucleusModal.IsReviewMode() {
-				return m, m.loadBranchesForModalCmd()
-			}
-		}
-		return m, nil
-
 	case profilesLoadedMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
 		} else {
 			m.nucleusModal = m.nucleusModal.SetProfiles(msg.names, msg.paths)
 			m.githubProfileNames = msg.names
-		}
-		return m, nil
-
-	case branchesLoadedMsg:
-		if msg.err != nil {
-			m.lastErr = msg.err.Error()
-		} else {
-			m.nucleusModal = m.nucleusModal.SetBranches(msg.branches)
 		}
 		return m, nil
 
@@ -567,10 +540,6 @@ func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if req.LoadBranches {
-		return m, tea.Batch(cmd, m.loadBranchesForModalCmd())
-	}
-
 	if req.Submit != nil {
 		sub := req.Submit
 		m.state = stateList
@@ -595,21 +564,10 @@ func (m Model) openNucleusModal(ctx NucleusModalContext) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	cmds = append(cmds, initCmd)
 
-	if m.services.LoadRepos != nil {
-		cmds = append(cmds, m.loadReposCmd())
-	} else {
-		m.nucleusModal = m.nucleusModal.SetRepos([]string{"."})
-	}
-
 	if m.services.LoadProfiles != nil {
 		cmds = append(cmds, m.loadProfilesCmd())
 	} else {
 		m.nucleusModal = m.nucleusModal.SetProfiles(nil, nil)
-	}
-
-	// For review mode, load branches immediately (repo is already known as ".").
-	if ctx.Mode == ModeReview && m.services.LoadRepos == nil {
-		cmds = append(cmds, m.loadBranchesForModalCmd())
 	}
 
 	return m, tea.Batch(cmds...)
@@ -633,7 +591,7 @@ func (m Model) viewMain() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, statusBar)
 }
 
-func (m Model) renderOverlay(base, content string) string {
+func (m Model) renderOverlay(_ string, content string) string {
 	box := StyleOverlay.Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceBackground(lipgloss.Color("")))
@@ -710,20 +668,6 @@ func (m Model) loadBranchInfoCmd() tea.Cmd {
 	}
 }
 
-// loadBranchesForModalCmd fires an async fetch of local branches for the repo
-// currently selected in the modal.
-func (m Model) loadBranchesForModalCmd() tea.Cmd {
-	repo := m.nucleusModal.SelectedRepo()
-	if m.services.ListBranches == nil || repo == "" {
-		return func() tea.Msg { return branchesLoadedMsg{branches: []string{}} }
-	}
-	svc := m.services.ListBranches
-	return func() tea.Msg {
-		branches, err := svc(repo)
-		return branchesLoadedMsg{branches: branches, err: err}
-	}
-}
-
 // loadNeuronAddBranchesCmd fetches existing branches for the neuron add existing-branch picker.
 func (m Model) loadNeuronAddBranchesCmd(repoPath string) tea.Cmd {
 	if m.services.ListBranches == nil {
@@ -733,15 +677,6 @@ func (m Model) loadNeuronAddBranchesCmd(repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		branches, err := svc(repoPath)
 		return neuronAddBranchesLoadedMsg{branches: branches, err: err}
-	}
-}
-
-// loadReposCmd fires an async repo-list fetch.
-func (m Model) loadReposCmd() tea.Cmd {
-	svc := m.services.LoadRepos
-	return func() tea.Msg {
-		repos, err := svc()
-		return reposLoadedMsg{repos: repos, err: err}
 	}
 }
 

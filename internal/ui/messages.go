@@ -12,12 +12,6 @@ type nucleiLoadedMsg struct {
 	err    error
 }
 
-// reposLoadedMsg is emitted when the repo list load completes.
-type reposLoadedMsg struct {
-	repos []string
-	err   error
-}
-
 // profilesLoadedMsg is emitted when the profile list load completes.
 type profilesLoadedMsg struct {
 	names []string          // sorted display names
@@ -79,12 +73,6 @@ type githubPRPreviewLoadedMsg struct {
 	number int // PR number the result belongs to (stale-check)
 	detail *github.PRDetail
 	err    error
-}
-
-// branchesLoadedMsg is emitted when the local branch list fetch completes.
-type branchesLoadedMsg struct {
-	branches []string
-	err      error
 }
 
 // jiraIssueMetaLoadedMsg is emitted when a single issue's metadata is fetched

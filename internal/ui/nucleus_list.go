@@ -142,8 +142,9 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // viewHeader renders the top bar with the app name and nucleus count.
 func (m Model) viewHeader() string {
-	count := fmt.Sprintf("%d nucleus(i)", len(m.nuclei))
-	left := StyleHeader.Render("◈  EXOCORTEX")
+	count := fmt.Sprintf("%d nuclei", len(m.nuclei))
+	dot := lipgloss.NewStyle().Foreground(ColorAccent).Render("◈")
+	left := dot + StyleDim.Render("  exocortex")
 	right := StyleMuted.Render(count)
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -155,7 +156,7 @@ func (m Model) viewHeader() string {
 // viewNucleusList renders the left-panel list of nuclei.
 func (m Model) viewNucleusList(width int) string {
 	if len(m.nuclei) == 0 {
-		return StyleDim.Render("  no nuclei yet\n  press n to create one")
+		return StyleDim.Render("  No nuclei yet.\n  Press n to get started.")
 	}
 	var sb strings.Builder
 	for i, n := range m.nuclei {
@@ -171,15 +172,21 @@ func (m Model) viewNucleusList(width int) string {
 		task := truncate(n.TaskDescription, taskWidth)
 		age := fmtAge(n.CreatedAt)
 
-		line1 := fmt.Sprintf(" %s %-*s", dots, width-10, task)
-		meta := fmt.Sprintf("   %s  %s", n.ID, age)
-		line2 := StyleDim.Render(meta) + badges
+		// Construct lines with left-bar indicator for selection
+		indicator := " "
+		if i == m.cursor {
+			indicator = lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
+		}
+		taskStr := lipgloss.NewStyle().Foreground(ColorText).Render(task)
+		line1 := fmt.Sprintf("%s %s %s", indicator, dots, taskStr)
+
+		// Colored metadata: accent ID, muted age
+		idStr := lipgloss.NewStyle().Foreground(ColorAccent).Render(n.ID)
+		ageStr := lipgloss.NewStyle().Foreground(ColorDim).Render(age)
+		meta := fmt.Sprintf("  %s · %s", idStr, ageStr)
+		line2 := meta + badges
 
 		row := line1 + "\n" + line2
-		if i == m.cursor {
-			row = StyleSelected.Width(width).Render(line1) + "\n" +
-				StyleSelected.Width(width).Foreground(ColorDim).Render("  "+n.ID+"  "+age) + badges
-		}
 		sb.WriteString(row)
 		if i < len(m.nuclei)-1 {
 			sb.WriteString("\n")
@@ -192,7 +199,7 @@ func (m Model) viewNucleusList(width int) string {
 func nucleusBadges(n registry.Nucleus) string {
 	var s string
 	if len(n.JiraKeys) > 0 {
-		s += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKeys[0]+"]")
+		s += " · " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKeys[0]+"]")
 		if len(n.JiraKeys) > 1 {
 			s += lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render(fmt.Sprintf("+%d", len(n.JiraKeys)-1))
 		}
@@ -200,9 +207,9 @@ func nucleusBadges(n registry.Nucleus) string {
 	switch len(n.PullRequests) {
 	case 0:
 	case 1:
-		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[#%d]", n.PullRequests[0].Number))
+		s += " · " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("#%d", n.PullRequests[0].Number))
 	default:
-		s += " " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("[%d PRs]", len(n.PullRequests)))
+		s += " · " + lipgloss.NewStyle().Foreground(ColorAccent).Render(fmt.Sprintf("%d PRs", len(n.PullRequests)))
 	}
 	return s
 }
@@ -211,7 +218,7 @@ func nucleusBadges(n registry.Nucleus) string {
 func nucleusBadgesPlain(n registry.Nucleus) string {
 	var s string
 	if len(n.JiraKeys) > 0 {
-		s += " [" + n.JiraKeys[0] + "]"
+		s += " · [" + n.JiraKeys[0] + "]"
 		if len(n.JiraKeys) > 1 {
 			s += fmt.Sprintf("+%d", len(n.JiraKeys)-1)
 		}
@@ -219,9 +226,9 @@ func nucleusBadgesPlain(n registry.Nucleus) string {
 	switch len(n.PullRequests) {
 	case 0:
 	case 1:
-		s += fmt.Sprintf(" [#%d]", n.PullRequests[0].Number)
+		s += fmt.Sprintf(" · #%d", n.PullRequests[0].Number)
 	default:
-		s += fmt.Sprintf(" [%d PRs]", len(n.PullRequests))
+		s += fmt.Sprintf(" · %d PRs", len(n.PullRequests))
 	}
 	return s
 }
@@ -251,7 +258,7 @@ func claudeNeuronDotsPlain(n registry.Nucleus) string {
 	if count == 0 {
 		return "─"
 	}
-	return strings.Repeat("●", count)
+	return strings.Repeat("◆", count)
 }
 
 // viewStatusBar renders the bottom status/help bar for the main view.
@@ -259,7 +266,18 @@ func (m Model) viewStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render(m.help.View(m.keys))
+	// Context-sensitive key hints for the nucleus list
+	hints := "  q quit · n new · j/k move · g go · e edit · d delete · r refresh"
+	if len(m.nuclei) > 0 {
+		hints = "  q quit · n new · j/k move · g go · e edit · d delete · b jira · r refresh"
+	}
+	count := fmt.Sprintf("%d nuclei", len(m.nuclei))
+	right := StyleMuted.Render(count)
+	gap := m.width - lipgloss.Width(hints) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return StyleHelp.Render(hints) + strings.Repeat(" ", gap) + right
 }
 
 // updateJiraKeyPicker handles key events when the Jira key picker overlay is active.

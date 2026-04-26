@@ -293,8 +293,8 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 	}
 
 	view := m4.(ui.Model).View()
-	if !strings.Contains(view, "JIRA PROJ-42") {
-		t.Fatalf("expected 'JIRA PROJ-42' in detail view, got:\n%s", view)
+	if !strings.Contains(view, "▌ Jira  PROJ-42") {
+		t.Fatalf("expected '▌ Jira  PROJ-42' in detail view, got:\n%s", view)
 	}
 }
 
