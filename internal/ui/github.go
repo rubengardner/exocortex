@@ -24,6 +24,9 @@ type filterItem struct {
 
 // updateGitHubView handles key events for the GitHub PR list.
 func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.githubClaudeWorktreePick {
+		return m.updateGitHubClaudeWorktreePicker(msg)
+	}
 	if m.githubProfilePick {
 		return m.updateGitHubProfilePicker(msg)
 	}
@@ -88,18 +91,18 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case matchKey(msg, m.keys.New):
-		if len(m.githubPRs) == 0 || m.services.CreateReviewNucleus == nil {
+		if len(m.githubPRs) == 0 || m.services.AddNvimNeuronFromPR == nil {
 			return m, nil
 		}
 		pr := m.githubPRs[m.githubPRCursor]
-		return m.startGitHubProfilePick(pr)
+		return m.startGitHubNvimNeuronPick(pr)
 
-	case msg.String() == "a":
-		if len(m.githubPRs) == 0 || m.services.AppendPRToNucleus == nil {
+	case msg.String() == "c":
+		if len(m.githubPRs) == 0 || m.services.AddClaudeNeuronFromPR == nil {
 			return m, nil
 		}
 		pr := m.githubPRs[m.githubPRCursor]
-		return m.startGitHubNucleusPick(pr)
+		return m.startGitHubClaudeNeuronPick(pr)
 
 	case matchKey(msg, m.keys.Filter):
 		if m.services.LoadGitHubFilterConfig == nil {
@@ -110,37 +113,15 @@ func (m Model) updateGitHubView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// startGitHubProfilePick begins a profile selection or calls CreateReviewNucleus directly
-// when zero or one profile is configured.
-func (m Model) startGitHubProfilePick(pr github.PR) (tea.Model, tea.Cmd) {
-	svc := m.services.CreateReviewNucleus
-	switch len(m.githubProfileNames) {
-	case 0:
-		// No profiles configured — create with empty profile.
-		task := pr.Title
-		if task == "" {
-			task = fmt.Sprintf("PR #%d", pr.Number)
-		}
-		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(task, "", registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
-		}
-	case 1:
-		// Auto-select the only profile.
-		profile := m.githubProfileNames[0]
-		task := pr.Title
-		if task == "" {
-			task = fmt.Sprintf("PR #%d", pr.Number)
-		}
-		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(task, profile, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
-		}
-	default:
-		// Multiple profiles — show picker.
-		m.githubPickerPendingPR = pr
-		m.githubProfilePick = true
-		m.githubProfileCursor = 0
-		return m, nil
-	}
+// startGitHubNvimNeuronPick opens the nucleus picker for adding an nvim neuron from a PR.
+func (m Model) startGitHubNvimNeuronPick(pr github.PR) (tea.Model, tea.Cmd) {
+	m.githubPickerPendingPR = pr
+	m.githubNucleusPick = true
+	m.githubNucleusPickMode = "add_nvim"
+	m.githubPickerFilter = ""
+	m.githubPickerCursor = 0
+	m.githubPickerNuclei = m.nuclei
+	return m, nil
 }
 
 // updateGitHubProfilePicker handles key events for the inline profile picker overlay.
@@ -162,16 +143,8 @@ func (m Model) updateGitHubProfilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case matchKey(msg, m.keys.Submit):
 		profile := m.githubProfileNames[m.githubProfileCursor]
-		pr := m.githubPickerPendingPR
-		svc := m.services.CreateReviewNucleus
-		task := pr.Title
-		if task == "" {
-			task = fmt.Sprintf("PR #%d", pr.Number)
-		}
 		m.githubProfilePick = false
-		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(task, profile, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
-		}
+		return m.startClaudeNeuronWorktreePick(m.githubClaudePickNucleusID, profile)
 	}
 	return m, nil
 }
@@ -202,14 +175,115 @@ func (m Model) viewGitHubProfilePicker() string {
 	return sb.String()
 }
 
-// startGitHubNucleusPick opens the nucleus picker for a PR append operation.
-func (m Model) startGitHubNucleusPick(pr github.PR) (tea.Model, tea.Cmd) {
+// startGitHubClaudeNeuronPick opens the nucleus picker for adding a Claude neuron from a PR.
+func (m Model) startGitHubClaudeNeuronPick(pr github.PR) (tea.Model, tea.Cmd) {
 	m.githubPickerPendingPR = pr
 	m.githubNucleusPick = true
+	m.githubNucleusPickMode = "add_claude"
 	m.githubPickerFilter = ""
 	m.githubPickerCursor = 0
 	m.githubPickerNuclei = m.nuclei
 	return m, nil
+}
+
+// startClaudeNeuronForNucleus moves to profile selection (if needed) then worktree selection.
+// githubPickerPendingPR must already be set before calling this.
+func (m Model) startClaudeNeuronForNucleus(nucleusID string) (tea.Model, tea.Cmd) {
+	m.githubWorktreeMode = "add_claude"
+	switch len(m.githubProfileNames) {
+	case 0:
+		return m.startClaudeNeuronWorktreePick(nucleusID, "")
+	case 1:
+		return m.startClaudeNeuronWorktreePick(nucleusID, m.githubProfileNames[0])
+	default:
+		m.githubClaudePickNucleusID = nucleusID
+		m.githubProfilePickMode = "add_claude"
+		m.githubProfilePick = true
+		m.githubProfileCursor = 0
+		return m, nil
+	}
+}
+
+// startClaudeNeuronWorktreePick shows a 2-item picker: no worktree (default) vs new worktree.
+// githubPickerPendingPR must already be set before calling this.
+func (m Model) startClaudeNeuronWorktreePick(nucleusID, profile string) (tea.Model, tea.Cmd) {
+	m.githubClaudePickNucleusID = nucleusID
+	m.githubClaudePickProfile = profile
+	m.githubClaudeWorktreePick = true
+	m.githubClaudeWorktreeCursor = 0 // default: no worktree
+	return m, nil
+}
+
+// updateGitHubClaudeWorktreePicker handles key events for the worktree choice overlay.
+func (m Model) updateGitHubClaudeWorktreePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case matchKey(msg, m.keys.Cancel):
+		m.githubClaudeWorktreePick = false
+		return m, nil
+
+	case matchKey(msg, m.keys.Up):
+		if m.githubClaudeWorktreeCursor > 0 {
+			m.githubClaudeWorktreeCursor--
+		}
+
+	case matchKey(msg, m.keys.Down):
+		if m.githubClaudeWorktreeCursor < 1 {
+			m.githubClaudeWorktreeCursor++
+		}
+
+	case matchKey(msg, m.keys.Submit):
+		createWorktree := m.githubClaudeWorktreeCursor == 1
+		m.githubClaudeWorktreePick = false
+		nucleusID := m.githubClaudePickNucleusID
+		pr := m.githubPickerPendingPR
+		if m.githubWorktreeMode == "add_nvim" {
+			svc := m.services.AddNvimNeuronFromPR
+			return m, func() tea.Msg {
+				return actionDoneMsg{err: svc(nucleusID, pr.Repo, pr.Branch, createWorktree)}
+			}
+		}
+		profile := m.githubClaudePickProfile
+		svc := m.services.AddClaudeNeuronFromPR
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(nucleusID, pr.Repo, pr.Branch, profile, createWorktree)}
+		}
+	}
+	return m, nil
+}
+
+// viewGitHubClaudeWorktreePicker renders the worktree selection overlay.
+func (m Model) viewGitHubClaudeWorktreePicker() string {
+	var sb strings.Builder
+	pr := m.githubPickerPendingPR
+	title := pr.Title
+	if title == "" {
+		title = fmt.Sprintf("PR #%d", pr.Number)
+	}
+	heading := "Add Claude Neuron"
+	if m.githubWorktreeMode == "add_nvim" {
+		heading = "Add Nvim Neuron"
+	}
+	sb.WriteString(StyleTitle.Render(heading) + "\n")
+	sb.WriteString(StyleDim.Render(truncate(title, 40)) + "\n\n")
+	sb.WriteString(StyleLabel.Render("Checkout mode") + "\n")
+
+	options := []string{
+		"existing repo  (no branch switch, reuse sibling worktree if available)",
+		"new worktree   (isolated checkout on PR branch)",
+	}
+	for i, opt := range options {
+		if i == m.githubClaudeWorktreeCursor {
+			sb.WriteString(StyleSelected.Render("  ▶ "+opt) + "\n")
+		} else {
+			sb.WriteString("    " + opt + "\n")
+		}
+	}
+	sb.WriteString("\n")
+	sb.WriteString(StyleDim.Render("↑/k") + " up   " +
+		StyleDim.Render("↓/j") + " down   " +
+		StyleDim.Render("enter") + " confirm   " +
+		StyleDim.Render("esc") + " cancel")
+	return sb.String()
 }
 
 // updateGitHubNucleusPicker handles key events for the nucleus selection overlay.
@@ -246,13 +320,14 @@ func (m Model) updateGitHubNucleusPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.githubPickerCursor = 0
 		}
 		nucleus := filtered[m.githubPickerCursor]
-		pr := m.githubPickerPendingPR
-		svc := m.services.AppendPRToNucleus
 		m.githubNucleusPick = false
 		m.githubPickerFilter = ""
-		return m, func() tea.Msg {
-			return actionDoneMsg{err: svc(nucleus.ID, registry.PullRequest{Number: pr.Number, Repo: pr.Repo}, pr.Repo, pr.Branch)}
+		if m.githubNucleusPickMode == "add_claude" {
+			return m.startClaudeNeuronForNucleus(nucleus.ID)
 		}
+		// "add_nvim": go directly to worktree picker (no profile step)
+		m.githubWorktreeMode = "add_nvim"
+		return m.startClaudeNeuronWorktreePick(nucleus.ID, "")
 
 	default:
 		if msg.Type == tea.KeyRunes {
@@ -271,7 +346,11 @@ func (m Model) viewGitHubNucleusPicker() string {
 	if title == "" {
 		title = fmt.Sprintf("PR #%d", pr.Number)
 	}
-	sb.WriteString(StyleTitle.Render("Append PR to Nucleus") + "\n")
+	heading := "Add Nvim Neuron to Nucleus"
+	if m.githubNucleusPickMode == "add_claude" {
+		heading = "Add Claude Neuron to Nucleus"
+	}
+	sb.WriteString(StyleTitle.Render(heading) + "\n")
 	sb.WriteString(StyleDim.Render(truncate(title, 40)) + "\n\n")
 
 	filtered := githubFilteredNuclei(m.githubPickerNuclei, m.githubPickerFilter)
@@ -292,10 +371,14 @@ func (m Model) viewGitHubNucleusPicker() string {
 		}
 	}
 	sb.WriteString("\n")
+	action := "add nvim"
+	if m.githubNucleusPickMode == "add_claude" {
+		action = "add claude"
+	}
 	sb.WriteString(StyleDim.Render("type") + " filter   " +
 		StyleDim.Render("↑/k") + " up   " +
 		StyleDim.Render("↓/j") + " down   " +
-		StyleDim.Render("enter") + " append   " +
+		StyleDim.Render("enter") + " " + action + "   " +
 		StyleDim.Render("esc") + " cancel")
 	return sb.String()
 }
@@ -336,6 +419,9 @@ func (m Model) startPreviewLoad() (tea.Model, tea.Cmd) {
 
 // updateGitHubPRDetail handles key events for the PR file-accordion detail.
 func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.githubClaudeWorktreePick {
+		return m.updateGitHubClaudeWorktreePicker(msg)
+	}
 	if m.githubProfilePick {
 		return m.updateGitHubProfilePicker(msg)
 	}
@@ -377,7 +463,7 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case matchKey(msg, m.keys.New):
-		if m.githubDetailPR == nil || m.services.CreateReviewNucleus == nil {
+		if m.githubDetailPR == nil || m.services.AddNvimNeuronFromPR == nil {
 			return m, nil
 		}
 		pr := github.PR{
@@ -386,10 +472,10 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			Title:  m.githubDetailPR.Title,
 			Branch: m.githubDetailPR.Branch,
 		}
-		return m.startGitHubProfilePick(pr)
+		return m.startGitHubNvimNeuronPick(pr)
 
-	case msg.String() == "a":
-		if m.githubDetailPR == nil || m.services.AppendPRToNucleus == nil {
+	case msg.String() == "c":
+		if m.githubDetailPR == nil || m.services.AddClaudeNeuronFromPR == nil {
 			return m, nil
 		}
 		pr := github.PR{
@@ -398,7 +484,7 @@ func (m Model) updateGitHubPRDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			Title:  m.githubDetailPR.Title,
 			Branch: m.githubDetailPR.Branch,
 		}
-		return m.startGitHubNucleusPick(pr)
+		return m.startGitHubClaudeNeuronPick(pr)
 
 	case matchKey(msg, m.keys.Nvim):
 		if m.githubDetailPR == nil || m.services.OpenNvimFile == nil {
@@ -710,11 +796,11 @@ func (m Model) viewGitHubStatusBar() string {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
 	hint := "  q back   j/k select   enter detail"
-	if m.services.CreateReviewNucleus != nil {
-		hint += "   n review"
+	if m.services.AddNvimNeuronFromPR != nil {
+		hint += "   n nvim"
 	}
-	if m.services.AppendPRToNucleus != nil {
-		hint += "   a append"
+	if m.services.AddClaudeNeuronFromPR != nil {
+		hint += "   c claude"
 	}
 	if m.services.BrowserOpen != nil {
 		hint += "   o browser"
@@ -731,11 +817,11 @@ func (m Model) viewGitHubDetailStatusBar() string {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
 	hint := "  esc back   j/k file   space expand   pgdn/pgup scroll"
-	if m.services.CreateReviewNucleus != nil {
-		hint += "   n review"
+	if m.services.AddNvimNeuronFromPR != nil {
+		hint += "   n nvim"
 	}
-	if m.services.AppendPRToNucleus != nil {
-		hint += "   a append"
+	if m.services.AddClaudeNeuronFromPR != nil {
+		hint += "   c claude"
 	}
 	if m.githubDetailPR != nil {
 		if linked := m.prLinkedNucleusID(m.githubDetailPR); m.services.OpenNvimFile != nil && linked != "" {

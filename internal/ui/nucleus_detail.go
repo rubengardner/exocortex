@@ -125,6 +125,23 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateConfirmDelete
 		return m, nil
 
+	case matchKey(msg, m.keys.OpenBrowser):
+		if len(m.nuclei) == 0 || m.services.OpenJiraKey == nil {
+			return m, nil
+		}
+		keys := m.nuclei[m.cursor].JiraKeys
+		if len(keys) == 0 {
+			return m, nil
+		}
+		if len(keys) == 1 {
+			svc := m.services.OpenJiraKey
+			key := keys[0]
+			return m, func() tea.Msg { _ = svc(key); return nil }
+		}
+		m.jiraKeyPickActive = true
+		m.jiraKeyPickCursor = 0
+		return m, nil
+
 	case matchKey(msg, m.keys.TogglePreview):
 		m.previewEnabled = !m.previewEnabled
 		if m.previewEnabled {
@@ -132,6 +149,9 @@ func (m Model) updateNucleusDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.captureDetailPaneCmd()
 		}
 		return m, nil
+	}
+	if m.jiraKeyPickActive {
+		return m.updateJiraKeyPicker(msg)
 	}
 	return m, nil
 }
@@ -215,28 +235,31 @@ func (m Model) viewContextPanel(n registry.Nucleus, width int) string {
 	var sb strings.Builder
 
 	// ── Jira section ──────────────────────────────────────────────────────────
-	if n.JiraKey != "" {
-		title := "JIRA " + n.JiraKey
+	for i, jiraKey := range n.JiraKeys {
+		title := "JIRA " + jiraKey
 		sb.WriteString(StyleTitle.Render(truncate(title, width-2)) + "\n")
 		sb.WriteString(StyleDim.Render(strings.Repeat("─", clamp(width-2, 4, 60))) + "\n")
 
-		switch {
-		case m.detailJiraLoading:
-			sb.WriteString(StyleDim.Render("  loading…") + "\n")
-		case m.detailJiraIssue != nil:
-			issue := m.detailJiraIssue
-			sb.WriteString(StyleValue.Render("  "+truncate(issue.Summary, width-4)) + "\n")
-			sb.WriteString(StyleLabel.Render("Status") + StyleValue.Render(issue.Status) + "\n")
-			if issue.Assignee != "" {
-				first := strings.Fields(issue.Assignee)
-				if len(first) > 0 {
-					sb.WriteString(StyleDim.Render("  @"+first[0]) + "\n")
+		if i == 0 {
+			switch {
+			case m.detailJiraLoading:
+				sb.WriteString(StyleDim.Render("  loading…") + "\n")
+			case m.detailJiraIssue != nil:
+				issue := m.detailJiraIssue
+				sb.WriteString(StyleValue.Render("  "+truncate(issue.Summary, width-4)) + "\n")
+				sb.WriteString(StyleLabel.Render("Status") + StyleValue.Render(issue.Status) + "\n")
+				if issue.Assignee != "" {
+					first := strings.Fields(issue.Assignee)
+					if len(first) > 0 {
+						sb.WriteString(StyleDim.Render("  @"+first[0]) + "\n")
+					}
 				}
+				sb.WriteString(StyleDim.Render("  "+truncate(issue.URL, width-4)) + "\n")
+			default:
+				sb.WriteString(StyleDim.Render("  "+jiraKey) + "\n")
 			}
-			sb.WriteString(StyleDim.Render("  "+truncate(issue.URL, width-4)) + "\n")
-		default:
-			// Linked but metadata not yet loaded or unavailable.
-			sb.WriteString(StyleDim.Render("  "+n.JiraKey) + "\n")
+		} else {
+			sb.WriteString(StyleDim.Render("  "+jiraKey) + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -348,7 +371,7 @@ func (m Model) viewDetailStatusBar() string {
 	if m.lastErr != "" {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
-	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   d del neuron   P add PR   p preview   r refresh")
+	return StyleHelp.Render("  q back   j/k neurons   g goto   a add neuron   d del neuron   P add PR   o jira   p preview   r refresh")
 }
 
 // firstLine returns the first non-empty line of s, useful for PR body previews.
@@ -432,13 +455,13 @@ func (m Model) viewNucleusSummary(width int) string {
 	}
 
 	// ── Links (Jira + PRs) ────────────────────────────────────────────────────
-	if n.JiraKey != "" || len(n.PullRequests) > 0 {
+	if len(n.JiraKeys) > 0 || len(n.PullRequests) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(" " + StyleDim.Render("── Links "+strings.Repeat("─", clamp(width-12, 2, 50))) + "\n")
 
-		if n.JiraKey != "" {
-			jiraStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8"))
-			sb.WriteString("  " + jiraStyle.Render(n.JiraKey) + "\n")
+		jiraStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8"))
+		for _, key := range n.JiraKeys {
+			sb.WriteString("  " + jiraStyle.Render(key) + "\n")
 		}
 		for _, pr := range n.PullRequests {
 			prStyle := lipgloss.NewStyle().Foreground(ColorAccent)

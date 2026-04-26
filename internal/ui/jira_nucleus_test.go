@@ -203,7 +203,7 @@ func TestNucleusDetail_WithJiraKey_LoadsMetadata(t *testing.T) {
 	nuclei := []registry.Nucleus{
 		{
 			ID: "auth1", TaskDescription: "Fix auth bug",
-			JiraKey: "PROJ-42", Status: "working", CreatedAt: time.Now(),
+			JiraKeys: []string{"PROJ-42"}, Status: "working", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "working"},
 			},
@@ -254,7 +254,7 @@ func TestNucleusDetail_JiraMetadata_RendersInView(t *testing.T) {
 	nuclei := []registry.Nucleus{
 		{
 			ID: "auth1", TaskDescription: "Fix auth bug",
-			JiraKey: "PROJ-42", Status: "working", CreatedAt: time.Now(),
+			JiraKeys: []string{"PROJ-42"}, Status: "working", CreatedAt: time.Now(),
 			Neurons: []registry.Neuron{
 				{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", Status: "working"},
 			},

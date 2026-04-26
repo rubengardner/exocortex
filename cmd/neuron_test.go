@@ -212,36 +212,6 @@ func TestExecuteAddNeuron_UsesWorktreePathWhenSet(t *testing.T) {
 	}
 }
 
-func TestExecuteAppendPRNeuron_AddsNvimNeuronAndPR(t *testing.T) {
-	reg := &fakeRegistryNeuronAdd{
-		nuclei: []registry.Nucleus{
-			{
-				ID: "nucl1",
-				Neurons: []registry.Neuron{
-					{ID: "c1", Type: registry.NeuronClaude, TmuxTarget: "main:1.0", WorktreePath: "/repo/.worktrees/nucl1"},
-				},
-			},
-		},
-	}
-	tm := &fakeTmuxNeuronAdd{}
-	gt := &fakeGitNeuronAdd{}
-
-	pr := registry.PullRequest{Number: 7, Repo: "org/repo"}
-	err := executeAppendPRNeuron("nucl1", "/repo", "feat/oauth", pr, reg, gt, tm, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if reg.addedNeuron.Type != registry.NeuronNvim {
-		t.Fatalf("expected nvim neuron, got %s", reg.addedNeuron.Type)
-	}
-	if tm.sentKeys != "nvim ." {
-		t.Fatalf("expected 'nvim .' sent, got %q", tm.sentKeys)
-	}
-	if reg.addedPR.Number != 7 {
-		t.Fatalf("expected PR #7 stored, got %d", reg.addedPR.Number)
-	}
-}
-
 func TestExecuteAddNeuron_FallsBackToRepoPathWhenNoWorktree(t *testing.T) {
 	// Nuclei created without a worktree (e.g. review with createWorktree=false)
 	// must open new neurons in RepoPath, not in an empty string.

@@ -11,6 +11,9 @@ import (
 
 // updateJiraBoard handles key events on the Jira kanban board.
 func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.jiraNucleusPick {
+		return m.updateJiraNucleusPicker(msg)
+	}
 	switch {
 	case matchKey(msg, m.keys.Cancel), matchKey(msg, m.keys.Quit):
 		m.state = stateList
@@ -94,8 +97,78 @@ func (m Model) updateJiraBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			JiraKey:     issue.Key,
 			JiraSummary: issue.Summary,
 		})
+
+	case msg.String() == "a":
+		// Attach selected Jira issue to an existing nucleus.
+		if m.services.AddJiraKey == nil || len(m.jiraColumns) == 0 {
+			break
+		}
+		col := m.jiraColumns[m.jiraColIdx]
+		issues := m.jiraIssues[col]
+		if m.jiraRowIdx >= len(issues) {
+			break
+		}
+		m.jiraPendingKey = issues[m.jiraRowIdx].Key
+		m.jiraNucleusPick = true
+		m.githubPickerFilter = ""
+		m.githubPickerCursor = 0
+		m.githubPickerNuclei = m.nuclei
+		return m, nil
 	}
 	return m.jiraAdjustScroll(), nil
+}
+
+// updateJiraNucleusPicker handles key events for the nucleus selection overlay
+// shown when attaching a Jira ticket to an existing nucleus.
+func (m Model) updateJiraNucleusPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := githubFilteredNuclei(m.githubPickerNuclei, m.githubPickerFilter)
+	switch {
+	case matchKey(msg, m.keys.Cancel):
+		m.jiraNucleusPick = false
+		m.jiraPendingKey = ""
+		m.githubPickerFilter = ""
+		return m, nil
+
+	case matchKey(msg, m.keys.Up):
+		if m.githubPickerCursor > 0 {
+			m.githubPickerCursor--
+		}
+
+	case matchKey(msg, m.keys.Down):
+		if m.githubPickerCursor < len(filtered)-1 {
+			m.githubPickerCursor++
+		}
+
+	case msg.Type == tea.KeyBackspace:
+		if len(m.githubPickerFilter) > 0 {
+			m.githubPickerFilter = m.githubPickerFilter[:len(m.githubPickerFilter)-1]
+			m.githubPickerCursor = 0
+		}
+
+	case matchKey(msg, m.keys.Submit):
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		if m.githubPickerCursor >= len(filtered) {
+			m.githubPickerCursor = 0
+		}
+		nucleus := filtered[m.githubPickerCursor]
+		key := m.jiraPendingKey
+		svc := m.services.AddJiraKey
+		m.jiraNucleusPick = false
+		m.jiraPendingKey = ""
+		m.githubPickerFilter = ""
+		return m, func() tea.Msg {
+			return actionDoneMsg{err: svc(nucleus.ID, key)}
+		}
+
+	default:
+		if len(msg.Runes) > 0 {
+			m.githubPickerFilter += string(msg.Runes)
+			m.githubPickerCursor = 0
+		}
+	}
+	return m, nil
 }
 
 // updateJiraDetail handles key events on the Jira issue detail overlay.
@@ -142,12 +215,17 @@ func (m Model) updateJiraDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// viewJiraBoard renders the full Jira board screen.
+// viewJiraBoard renders the full Jira board screen, with the nucleus-picker
+// overlay when attaching a ticket to an existing nucleus.
 func (m Model) viewJiraBoard() string {
 	header := m.viewHeader()
 	body := m.viewJiraBoardBody()
 	statusBar := m.viewJiraBoardStatusBar()
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, statusBar)
+	base := lipgloss.JoinVertical(lipgloss.Left, header, body, statusBar)
+	if m.jiraNucleusPick {
+		return m.renderOverlay(base, m.viewJiraNucleusPicker())
+	}
+	return base
 }
 
 // viewJiraBoardBody renders the multi-column kanban body.
@@ -259,7 +337,7 @@ func (m Model) viewJiraBoardStatusBar() string {
 	if m.jiraLoading {
 		return StyleHelp.Render("  refreshing…")
 	}
-	hint := "  b/esc back   j/k row   h/l column   space detail   o browser   N new nucleus   r refresh"
+	hint := "  b/esc back   j/k row   h/l column   space detail   o browser   N new   a attach   r refresh"
 	if !m.jiraLastRefresh.IsZero() {
 		return StyleHelp.Render(fmt.Sprintf("  updated %s ·%s", fmtAge(m.jiraLastRefresh), hint))
 	}
@@ -368,6 +446,36 @@ func (m Model) jiraMaxVisible() int {
 	}
 	return v
 }
+
+// viewJiraNucleusPicker renders the nucleus selection overlay for attaching a
+// Jira ticket. Reuses the githubPickerFilter/Cursor/Nuclei fields.
+func (m Model) viewJiraNucleusPicker() string {
+	filtered := githubFilteredNuclei(m.githubPickerNuclei, m.githubPickerFilter)
+
+	var sb strings.Builder
+	sb.WriteString(StyleTitle.Render("Attach  "+m.jiraPendingKey+"  to nucleus") + "\n")
+	sb.WriteString(StyleDim.Render(strings.Repeat("─", 36)) + "\n")
+	sb.WriteString(StyleLabel.Render("Filter: ") + m.githubPickerFilter + "█\n\n")
+
+	if len(filtered) == 0 {
+		sb.WriteString(StyleDim.Render("  no matching nuclei") + "\n")
+	} else {
+		for i, n := range filtered {
+			label := n.ID + "  " + truncate(n.TaskDescription, 28)
+			if i == m.githubPickerCursor {
+				sb.WriteString(StyleSelected.Render("▶ "+label) + "\n")
+			} else {
+				sb.WriteString("  " + label + "\n")
+			}
+		}
+	}
+	sb.WriteString("\n" + StyleDim.Render(strings.Repeat("─", 36)) + "\n")
+	sb.WriteString(StyleHelp.Render("  enter attach   esc cancel   type to filter"))
+	return sb.String()
+}
+
+// viewJiraBoardStatusBar renders the status bar for the Jira board.
+// (declared here to keep the attach hint close to the handler)
 
 // jiraAdjustScroll updates the per-column scroll offset so the selected row
 // stays within the visible window.

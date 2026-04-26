@@ -17,7 +17,7 @@ func summaryNuclei() []registry.Nucleus {
 			ID:              "fixaut",
 			TaskDescription: "Fix authentication bug",
 			Status:          "working",
-			JiraKey:         "PROJ-123",
+			JiraKeys:        []string{"PROJ-123"},
 			PullRequests: []registry.PullRequest{
 				{Number: 456, Repo: "org/repo1"},
 			},

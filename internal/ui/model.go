@@ -54,20 +54,27 @@ type Services struct {
 	// BaseBranchesForRepo returns the configured base branches for a repo path.
 	// Returns nil when the repo is not configured or has no base branches set.
 	BaseBranchesForRepo func(repoPath string) []string
-	// CreateReviewNucleus creates a nucleus with an nvim neuron on an existing PR branch.
-	// profile is the display name of the profile to use (resolved to CLAUDE_CONFIG_DIR by the caller).
-	// nil disables the direct PR → nucleus flow.
-	CreateReviewNucleus func(task, profile string, pr registry.PullRequest, repo, branch string) error
-	// AppendPRToNucleus adds an nvim neuron + PR record to an existing nucleus.
-	// repo is a short "org/name" identifier resolved to a local path by the caller.
-	// nil disables the `a` key in GitHub views.
-	AppendPRToNucleus func(nucleusID string, pr registry.PullRequest, repo, branch string) error
+	// AddNvimNeuronFromPR appends an nvim neuron to an existing nucleus on the PR branch.
+	// Mirrors AddClaudeNeuronFromPR but launches nvim. nil disables the "n" binding.
+	AddNvimNeuronFromPR func(nucleusID, repo, branch string, createWorktree bool) error
 	// OpenNvimFile opens a specific file at a given line in the nucleus's nvim window.
 	// nucleusID is found by matching PRNumber/PRRepo; nil disables the binding.
 	OpenNvimFile func(nucleusID, filePath string, line int) error
 	// BrowserOpen opens the given URL in the system browser (e.g. xdg-open).
 	// nil disables the binding.
 	BrowserOpen func(url string) error
+	// AddJiraKey appends a Jira key to an existing nucleus (deduplicates).
+	// nil disables the "a" binding in the Jira board.
+	AddJiraKey func(nucleusID, key string) error
+	// OpenJiraKey opens the Jira browse URL for the given key.
+	// Constructs the URL from config. nil disables the "o" binding in nucleus views.
+	OpenJiraKey func(key string) error
+	// AddClaudeNeuronFromPR creates a Claude neuron on an existing PR branch and appends
+	// it to the named nucleus. repo is the short "org/name" form resolved by the caller.
+	// profile is the CLAUDE_CONFIG_DIR display name (empty = no profile override).
+	// createWorktree=true isolates the checkout in a dedicated worktree; false opens the
+	// neuron directly in the repo directory. nil disables the "c" binding in GitHub views.
+	AddClaudeNeuronFromPR func(nucleusID, repo, branch, profile string, createWorktree bool) error
 }
 
 // Model is the root Bubble Tea model.
@@ -159,11 +166,22 @@ type Model struct {
 	githubProfileNames   []string    // display names for the picker
 	githubPickerPendingPR github.PR // PR waiting for a profile selection or nucleus selection
 
-	// github nucleus picker (shown when a is pressed on a PR)
-	githubNucleusPick   bool
-	githubPickerFilter  string
-	githubPickerCursor  int
-	githubPickerNuclei  []registry.Nucleus
+	// github nucleus picker (shown when n/c is pressed on a PR)
+	githubNucleusPick     bool
+	githubNucleusPickMode string // "add_nvim" | "add_claude"
+	githubPickerFilter    string
+	githubPickerCursor    int
+	githubPickerNuclei    []registry.Nucleus
+
+	// github profile picker mode discrimination and pending nucleus ID
+	githubProfilePickMode     string // "add_claude" (only remaining mode)
+	githubClaudePickNucleusID string // nucleus ID chosen during add_claude nucleus pick
+	githubClaudePickProfile   string // profile chosen during add_claude profile pick
+
+	// worktree picker (final step in add_claude and add_nvim flows)
+	githubClaudeWorktreePick   bool
+	githubClaudeWorktreeCursor int    // 0=no worktree (default), 1=new worktree
+	githubWorktreeMode         string // "add_claude" | "add_nvim" — set before worktree picker opens
 
 	// github PR hover preview (right panel in stateGitHubView)
 	githubPreviewPR      *github.PRDetail // nil until loaded
@@ -182,6 +200,16 @@ type Model struct {
 	githubFilterDraft  github.PRFilter  // in-progress edits while modal is open
 	githubFilterItems  []filterItem     // flat item list built when modal opens
 	githubFilterCursor int              // cursor within githubFilterItems
+
+	// jira board → nucleus picker (attach ticket to an existing nucleus)
+	// Shares githubPickerFilter / githubPickerCursor / githubPickerNuclei with the
+	// GitHub nucleus picker — the two overlays cannot be open simultaneously.
+	jiraNucleusPick bool
+	jiraPendingKey  string
+
+	// nucleus → jira key picker (open browser; shown only when >1 key linked)
+	jiraKeyPickActive bool
+	jiraKeyPickCursor int
 
 	// transient status bar message
 	lastErr string
@@ -481,12 +509,18 @@ func (m Model) View() string {
 	case stateJiraDetail:
 		return m.viewJiraDetail()
 	case stateNucleusDetail:
+		if m.jiraKeyPickActive {
+			return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewJiraKeyPicker())
+		}
 		return m.viewNucleusDetailDashboard()
 	case stateNeuronAdd:
 		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewNeuronAdd())
 	case statePRAdd:
 		return m.renderOverlay(m.viewNucleusDetailDashboard(), m.viewPRAdd())
 	case stateGitHubView:
+		if m.githubClaudeWorktreePick {
+			return m.renderOverlay(m.viewGitHubView(), m.viewGitHubClaudeWorktreePicker())
+		}
 		if m.githubProfilePick {
 			return m.renderOverlay(m.viewGitHubView(), m.viewGitHubProfilePicker())
 		}
@@ -495,6 +529,9 @@ func (m Model) View() string {
 		}
 		return m.viewGitHubView()
 	case stateGitHubPRDetail:
+		if m.githubClaudeWorktreePick {
+			return m.renderOverlay(m.viewGitHubPRDetail(), m.viewGitHubClaudeWorktreePicker())
+		}
 		if m.githubProfilePick {
 			return m.renderOverlay(m.viewGitHubPRDetail(), m.viewGitHubProfilePicker())
 		}
@@ -511,6 +548,9 @@ func (m Model) View() string {
 			return m.renderOverlay(base, m.nucleusModal.View())
 		case stateConfirmDelete:
 			return m.renderOverlay(base, m.viewConfirm())
+		}
+		if m.jiraKeyPickActive {
+			return m.renderOverlay(base, m.viewJiraKeyPicker())
 		}
 		return base
 	}
@@ -534,17 +574,6 @@ func (m Model) updateNucleusModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if req.Submit != nil {
 		sub := req.Submit
 		m.state = stateList
-		if sub.Mode == ModeReview {
-			svc := m.services.CreateReviewNucleus
-			if svc == nil {
-				m.lastErr = "review nucleus creation not configured"
-				m.state = m.prevState
-				return m, cmd
-			}
-			return m, tea.Batch(cmd, func() tea.Msg {
-				return actionDoneMsg{err: svc(sub.Task, sub.Profile, sub.PR, sub.Repo, sub.Branch)}
-			})
-		}
 		svc := m.services.CreateNucleus
 		return m, tea.Batch(cmd, func() tea.Msg {
 			return actionDoneMsg{err: svc(sub.Task, sub.JiraKey, sub.Profile)}
@@ -813,10 +842,11 @@ func (m Model) loadJiraIssueMetaCmd() tea.Cmd {
 	if m.services.LoadJiraIssueMeta == nil || len(m.nuclei) == 0 {
 		return nil
 	}
-	key := m.nuclei[m.cursor].JiraKey
-	if key == "" {
+	keys := m.nuclei[m.cursor].JiraKeys
+	if len(keys) == 0 {
 		return nil
 	}
+	key := keys[0]
 	svc := m.services.LoadJiraIssueMeta
 	return func() tea.Msg {
 		issue, err := svc(key)

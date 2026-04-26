@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/ruben_gardner/exocortex/internal/registry"
@@ -16,13 +14,21 @@ import (
 // createBranch=true creates a new branch (optionally from baseBranch); false checks out an existing one.
 // For claude neurons, CLAUDE_CONFIG_DIR is read from the nucleus's Profile field.
 func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string, createWorktree, createBranch bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc) error {
+	_, err := executeAddNeuronWithProfile(nucleusID, neuronType, repoPath, branch, baseBranch, "", createWorktree, createBranch, reg, gt, tm)
+	return err
+}
+
+// executeAddNeuronWithProfile is like executeAddNeuron but accepts an explicit claudeConfigDir
+// that overrides the nucleus-level Profile for this neuron's launch command. Pass "" to fall
+// back to the nucleus Profile as usual.
+func executeAddNeuronWithProfile(nucleusID, neuronType, repoPath, branch, baseBranch, claudeConfigDir string, createWorktree, createBranch bool, reg nucleusSvc, gt gitSvc, tm tmuxSvc) (string, error) {
 	r, err := reg.Load()
 	if err != nil {
-		return err
+		return "", err
 	}
 	n, err := r.FindByID(nucleusID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	neuronID := nextNeuronID(n.Neurons, neuronType)
@@ -36,32 +42,47 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string
 	if branch != "" && repoPath != "" {
 		if createWorktree {
 			worktreePath = filepath.Join(repoPath, ".worktrees", nucleusID+"-"+neuronID)
-			if err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, baseBranch); err != nil {
-				return fmt.Errorf("add worktree: %w", err)
+			err := gt.AddWorktree(repoPath, worktreePath, branch, createBranch, baseBranch)
+			if err != nil && !createBranch {
+				// Branch may only exist remotely; create a local tracking branch from origin.
+				err = gt.AddWorktree(repoPath, worktreePath, branch, true, "origin/"+branch)
+			}
+			if err != nil {
+				return "", fmt.Errorf("add worktree: %w", err)
 			}
 			workdir = worktreePath
 		} else if createBranch {
 			if err := gt.CheckoutNewBranch(repoPath, branch, baseBranch); err != nil {
-				return fmt.Errorf("git checkout -b %s: %w", branch, err)
+				return "", fmt.Errorf("git checkout -b %s: %w", branch, err)
 			}
 		} else {
-			if err := gt.Checkout(repoPath, branch); err != nil {
-				return fmt.Errorf("git checkout %s: %w", branch, err)
+			// No new worktree, no new branch: reuse a sibling neuron's worktree if one
+			// already has this branch checked out (avoids "already checked out" errors),
+			// otherwise open in the repo directory without switching branches.
+			for _, existing := range n.Neurons {
+				if existing.Branch == branch && existing.WorktreePath != "" {
+					workdir = existing.WorktreePath
+					break
+				}
 			}
 		}
 	}
 
 	target, err := tm.NewWindow(workdir, neuronType+"-"+nucleusID)
 	if err != nil {
-		return fmt.Errorf("tmux new-window: %w", err)
+		return "", fmt.Errorf("tmux new-window: %w", err)
 	}
 
 	var launchCmd string
 	switch registry.NeuronType(neuronType) {
 	case registry.NeuronClaude:
+		profile := claudeConfigDir
+		if profile == "" {
+			profile = n.Profile
+		}
 		launchCmd = "claude"
-		if n.Profile != "" {
-			launchCmd = "CLAUDE_CONFIG_DIR=" + n.Profile + " claude"
+		if profile != "" {
+			launchCmd = "CLAUDE_CONFIG_DIR=" + profile + " claude"
 		}
 	case registry.NeuronNvim:
 		launchCmd = "nvim ."
@@ -84,7 +105,7 @@ func executeAddNeuron(nucleusID, neuronType, repoPath, branch, baseBranch string
 		Branch:       branch,
 	}
 
-	return reg.AddNeuron(nucleusID, neuron)
+	return target, reg.AddNeuron(nucleusID, neuron)
 }
 
 // executeRemoveNeuron kills the neuron's tmux pane, removes its worktree (if any),
@@ -114,50 +135,6 @@ func executeRemoveNeuron(nucleusID, neuronID string, reg nucleusSvc, gt gitSvc, 
 		}
 	}
 	return reg.RemoveNeuron(nucleusID, neuronID)
-}
-
-// executeAppendPRNeuron adds an nvim neuron to an existing nucleus and links a PR.
-// It checks out the existing branch (createBranch=false) into a dedicated worktree.
-func executeAppendPRNeuron(nucleusID, repoPath, branch string, pr registry.PullRequest, reg nucleusSvc, gt gitSvc, tm tmuxSvc, _ io.Writer) error {
-	r, err := reg.Load()
-	if err != nil {
-		return err
-	}
-	n, err := r.FindByID(nucleusID)
-	if err != nil {
-		return err
-	}
-
-	neuronID := nextNeuronID(n.Neurons, string(registry.NeuronNvim))
-
-	worktreePath := filepath.Join(repoPath, ".worktrees", nucleusID+"-pr"+strconv.Itoa(pr.Number))
-	if err := gt.AddWorktree(repoPath, worktreePath, branch, false, ""); err != nil {
-		return fmt.Errorf("add worktree: %w", err)
-	}
-
-	windowName := "PR#" + strconv.Itoa(pr.Number)
-	target, err := tm.NewWindow(worktreePath, windowName)
-	if err != nil {
-		return fmt.Errorf("tmux new-window: %w", err)
-	}
-
-	if err := tm.SendKeys(target, "nvim ."); err != nil {
-		fmt.Printf("warning: could not launch nvim: %v\n", err)
-	}
-
-	neuron := registry.Neuron{
-		ID:           neuronID,
-		Type:         registry.NeuronNvim,
-		TmuxTarget:   target,
-		Status:       "idle",
-		RepoPath:     repoPath,
-		WorktreePath: worktreePath,
-		Branch:       branch,
-	}
-	if err := reg.AddNeuron(nucleusID, neuron); err != nil {
-		return err
-	}
-	return reg.AddPullRequest(nucleusID, pr)
 }
 
 // nextNeuronID generates the next unique ID for a new neuron of the given type

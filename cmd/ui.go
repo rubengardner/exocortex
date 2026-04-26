@@ -200,28 +200,82 @@ func buildServices() ui.Services {
 		ListBranches: func(repoPath string) ([]string, error) {
 			return gt.ListBranches(repoPath)
 		},
-		AppendPRToNucleus: func(nucleusID string, pr registry.PullRequest, repo, branch string) error {
+		AddNvimNeuronFromPR: func(nucleusID, repo, branch string, createWorktree bool) error {
 			cfg, err := iconfig.Load(iconfig.DefaultPath())
 			if err != nil {
 				return err
 			}
 			repoPath := resolveRepoPath(cfg, repo)
-			return executeAppendPRNeuron(nucleusID, repoPath, branch, pr, reg, gt, tm, io.Discard)
-		},
-		CreateReviewNucleus: func(task, profile string, pr registry.PullRequest, repo, branch string) error {
-			claudeConfigDir := ""
-			if profile != "" {
-				cfg, err := iconfig.Load(iconfig.DefaultPath())
-				if err == nil {
-					claudeConfigDir = cfg.Profiles[profile]
+			if repoPath == "." {
+				if r, err2 := reg.Load(); err2 == nil {
+					if n, err3 := r.FindByID(nucleusID); err3 == nil {
+						for _, neu := range n.Neurons {
+							if neu.RepoPath != "" {
+								repoPath = neu.RepoPath
+								break
+							}
+						}
+					}
 				}
 			}
-			return executeCreateReviewNucleus(task, repo, branch, claudeConfigDir, pr, reg, gt, tm, io.Discard)
+			target, err := executeAddNeuronWithProfile(nucleusID, "nvim", repoPath, branch, "", "", createWorktree, false, reg, gt, tm)
+			if err != nil {
+				return err
+			}
+			autoLinkPRForBranch(nucleusID, repoPath, branch)
+			if target != "" {
+				_ = tm.SelectPane(target)
+			}
+			return nil
+		},
+		AddClaudeNeuronFromPR: func(nucleusID, repo, branch, profile string, createWorktree bool) error {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil {
+				return err
+			}
+			repoPath := resolveRepoPath(cfg, repo)
+			if repoPath == "." {
+				// Config doesn't contain this repo; fall back to an existing neuron's RepoPath.
+				if r, err2 := reg.Load(); err2 == nil {
+					if n, err3 := r.FindByID(nucleusID); err3 == nil {
+						for _, neu := range n.Neurons {
+							if neu.RepoPath != "" {
+								repoPath = neu.RepoPath
+								break
+							}
+						}
+					}
+				}
+			}
+			claudeConfigDir := ""
+			if profile != "" {
+				claudeConfigDir = cfg.Profiles[profile]
+			}
+			target, err := executeAddNeuronWithProfile(nucleusID, "claude", repoPath, branch, "", claudeConfigDir, createWorktree, false, reg, gt, tm)
+			if err != nil {
+				return err
+			}
+			autoLinkPRForBranch(nucleusID, repoPath, branch)
+			if target != "" {
+				_ = tm.SelectPane(target)
+			}
+			return nil
 		},
 		OpenNvimFile: func(nucleusID, filePath string, line int) error {
 			return executeNvimFile(nucleusID, filePath, line, reg, gt, tm)
 		},
 		BrowserOpen: func(url string) error {
+			return exec.Command("open", url).Start()
+		},
+		AddJiraKey: func(nucleusID, key string) error {
+			return registry.AddJiraKey(registry.DefaultPath(), nucleusID, key)
+		},
+		OpenJiraKey: func(key string) error {
+			cfg, err := iconfig.Load(iconfig.DefaultPath())
+			if err != nil || cfg.Jira == nil {
+				return nil
+			}
+			url := strings.TrimRight(cfg.Jira.BaseURL, "/") + "/browse/" + key
 			return exec.Command("open", url).Start()
 		},
 	}

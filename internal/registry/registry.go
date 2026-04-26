@@ -29,7 +29,7 @@ func DefaultPath() string {
 func Load(path string) (*Registry, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Registry{Version: 4}, nil
+		return &Registry{Version: 5}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("registry: read %s: %w", path, err)
@@ -47,6 +47,8 @@ func Load(path string) (*Registry, error) {
 		return migrateV2(data)
 	case 3:
 		return migrateV3(data)
+	case 4:
+		return migrateV4(data)
 	}
 
 	var r Registry
@@ -62,7 +64,7 @@ func Save(path string, r *Registry) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
-	r.Version = 4 // always write as v4
+	r.Version = 5 // always write as v5
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return fmt.Errorf("registry: marshal: %w", err)
@@ -193,6 +195,23 @@ func UpdateNeuronTarget(path, nucleusID, neuronID, target string) error {
 			}
 		}
 		return fmt.Errorf("registry: neuron %q not found in nucleus %q", neuronID, nucleusID)
+	}
+	return fmt.Errorf("registry: nucleus %q not found", nucleusID)
+}
+
+// AddJiraKey appends a Jira key to the named Nucleus (deduplicates silently).
+func AddJiraKey(path, nucleusID, key string) error {
+	r, err := Load(path)
+	if err != nil {
+		return err
+	}
+	for i := range r.Nuclei {
+		if r.Nuclei[i].ID == nucleusID {
+			if !r.Nuclei[i].HasJiraKey(key) {
+				r.Nuclei[i].JiraKeys = append(r.Nuclei[i].JiraKeys, key)
+			}
+			return Save(path, r)
+		}
 	}
 	return fmt.Errorf("registry: nucleus %q not found", nucleusID)
 }
@@ -332,10 +351,14 @@ func migrateV2(data []byte) (*Registry, error) {
 
 	r := &Registry{Version: 4, Nuclei: make([]Nucleus, 0, len(v2.Nuclei))}
 	for _, n2 := range v2.Nuclei {
+		var jiraKeys []string
+		if n2.JiraKey != "" {
+			jiraKeys = []string{n2.JiraKey}
+		}
 		n := Nucleus{
 			ID:              n2.ID,
 			TaskDescription: n2.TaskDescription,
-			JiraKey:         n2.JiraKey,
+			JiraKeys:        jiraKeys,
 			Status:          n2.Status,
 			CreatedAt:       n2.CreatedAt,
 		}
@@ -414,7 +437,7 @@ type registryV3 struct {
 	Nuclei  []nucleusV3 `json:"nuclei"`
 }
 
-// migrateV3 converts a v3 JSON blob to a v4 Registry.
+// migrateV3 converts a v3 JSON blob to a v5 Registry.
 // Profile is moved from the primary Claude neuron to Nucleus.Profile when not
 // already set at the nucleus level.
 func migrateV3(data []byte) (*Registry, error) {
@@ -423,12 +446,16 @@ func migrateV3(data []byte) (*Registry, error) {
 		return nil, fmt.Errorf("registry: parse v3: %w", err)
 	}
 
-	r := &Registry{Version: 4, Nuclei: make([]Nucleus, 0, len(v3.Nuclei))}
+	r := &Registry{Version: 5, Nuclei: make([]Nucleus, 0, len(v3.Nuclei))}
 	for _, n3 := range v3.Nuclei {
+		var jiraKeys []string
+		if n3.JiraKey != "" {
+			jiraKeys = []string{n3.JiraKey}
+		}
 		n := Nucleus{
 			ID:              n3.ID,
 			TaskDescription: n3.TaskDescription,
-			JiraKey:         n3.JiraKey,
+			JiraKeys:        jiraKeys,
 			Profile:         n3.Profile,
 			PullRequests:    n3.PullRequests,
 			Status:          n3.Status,
@@ -452,6 +479,54 @@ func migrateV3(data []byte) (*Registry, error) {
 			}
 		}
 		n.Neurons = neurons
+		r.Nuclei = append(r.Nuclei, n)
+	}
+	return r, nil
+}
+
+// ── v4 migration ──────────────────────────────────────────────────────────────
+
+type nucleusV4 struct {
+	ID              string        `json:"id"`
+	TaskDescription string        `json:"task_description"`
+	JiraKey         string        `json:"jira_key,omitempty"`  // old single-key field
+	JiraKeys        []string      `json:"jira_keys,omitempty"` // new multi-key field (may already be set)
+	Profile         string        `json:"profile,omitempty"`
+	PullRequests    []PullRequest `json:"pull_requests,omitempty"`
+	Neurons         []Neuron      `json:"neurons"`
+	Status          string        `json:"status"`
+	CreatedAt       time.Time     `json:"created_at"`
+}
+
+type registryV4 struct {
+	Version int        `json:"version"`
+	Nuclei  []nucleusV4 `json:"nuclei"`
+}
+
+// migrateV4 converts a v4 JSON blob to a v5 Registry.
+// Converts the legacy jira_key field to jira_keys when the latter is absent.
+func migrateV4(data []byte) (*Registry, error) {
+	var v4 registryV4
+	if err := json.Unmarshal(data, &v4); err != nil {
+		return nil, fmt.Errorf("registry: parse v4: %w", err)
+	}
+
+	r := &Registry{Version: 5, Nuclei: make([]Nucleus, 0, len(v4.Nuclei))}
+	for _, n4 := range v4.Nuclei {
+		jiraKeys := n4.JiraKeys
+		if len(jiraKeys) == 0 && n4.JiraKey != "" {
+			jiraKeys = []string{n4.JiraKey}
+		}
+		n := Nucleus{
+			ID:              n4.ID,
+			TaskDescription: n4.TaskDescription,
+			JiraKeys:        jiraKeys,
+			Profile:         n4.Profile,
+			PullRequests:    n4.PullRequests,
+			Neurons:         n4.Neurons,
+			Status:          n4.Status,
+			CreatedAt:       n4.CreatedAt,
+		}
 		r.Nuclei = append(r.Nuclei, n)
 	}
 	return r, nil

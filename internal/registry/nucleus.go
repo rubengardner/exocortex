@@ -44,17 +44,27 @@ type PullRequest struct {
 }
 
 // Nucleus is the top-level unit of work. It is a logical grouping of neurons
-// (one per repo/task slice) and may be linked to an optional Jira ticket and
-// any number of pull requests.
+// (one per repo/task slice) and may be linked to any number of Jira tickets and
+// pull requests.
 type Nucleus struct {
 	ID              string        `json:"id"`
 	TaskDescription string        `json:"task_description"`
-	JiraKey         string        `json:"jira_key,omitempty"`
+	JiraKeys        []string      `json:"jira_keys,omitempty"`
 	Profile         string        `json:"profile,omitempty"` // CLAUDE_CONFIG_DIR path; inherited by all Claude neurons
 	PullRequests    []PullRequest `json:"pull_requests,omitempty"`
 	Neurons         []Neuron      `json:"neurons"`
 	Status          string        `json:"status"`
 	CreatedAt       time.Time     `json:"created_at"`
+}
+
+// HasJiraKey reports whether key is already linked to this nucleus.
+func (n *Nucleus) HasJiraKey(key string) bool {
+	for _, k := range n.JiraKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // Workdir returns the working directory for this nucleus by delegating to the

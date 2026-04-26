@@ -11,6 +11,9 @@ import (
 
 // updateNucleusList handles key events when the main nucleus list is active.
 func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.jiraKeyPickActive {
+		return m.updateJiraKeyPicker(msg)
+	}
 	switch {
 	case matchKey(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -101,6 +104,23 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case matchKey(msg, m.keys.OpenBrowser):
+		if len(m.nuclei) == 0 || m.services.OpenJiraKey == nil {
+			return m, nil
+		}
+		keys := m.nuclei[m.cursor].JiraKeys
+		if len(keys) == 0 {
+			return m, nil
+		}
+		if len(keys) == 1 {
+			svc := m.services.OpenJiraKey
+			key := keys[0]
+			return m, func() tea.Msg { _ = svc(key); return nil }
+		}
+		m.jiraKeyPickActive = true
+		m.jiraKeyPickCursor = 0
+		return m, nil
+
 	case matchKey(msg, m.keys.Submit), msg.Type == tea.KeyRight:
 		if len(m.nuclei) == 0 {
 			return m, nil
@@ -111,7 +131,7 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.branchModified = nil
 		m.branchAheadCommits = nil
 		m.detailJiraIssue = nil
-		m.detailJiraLoading = n.JiraKey != "" && m.services.LoadJiraIssueMeta != nil
+		m.detailJiraLoading = len(n.JiraKeys) > 0 && m.services.LoadJiraIssueMeta != nil
 		m.detailPRDetail = nil
 		m.detailPRLoading = len(n.PullRequests) > 0 && m.services.LoadGitHubPR != nil
 		m.state = stateNucleusDetail
@@ -171,8 +191,11 @@ func (m Model) viewNucleusList(width int) string {
 // nucleusBadges returns styled inline badges for Jira key and PR numbers.
 func nucleusBadges(n registry.Nucleus) string {
 	var s string
-	if n.JiraKey != "" {
-		s += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKey+"]")
+	if len(n.JiraKeys) > 0 {
+		s += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render("["+n.JiraKeys[0]+"]")
+		if len(n.JiraKeys) > 1 {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Render(fmt.Sprintf("+%d", len(n.JiraKeys)-1))
+		}
 	}
 	switch len(n.PullRequests) {
 	case 0:
@@ -187,8 +210,11 @@ func nucleusBadges(n registry.Nucleus) string {
 // nucleusBadgesPlain returns the plain-text width of badges (for layout math).
 func nucleusBadgesPlain(n registry.Nucleus) string {
 	var s string
-	if n.JiraKey != "" {
-		s += " [" + n.JiraKey + "]"
+	if len(n.JiraKeys) > 0 {
+		s += " [" + n.JiraKeys[0] + "]"
+		if len(n.JiraKeys) > 1 {
+			s += fmt.Sprintf("+%d", len(n.JiraKeys)-1)
+		}
 	}
 	switch len(n.PullRequests) {
 	case 0:
@@ -234,4 +260,57 @@ func (m Model) viewStatusBar() string {
 		return StyleError.Render(" ✗ " + m.lastErr)
 	}
 	return StyleHelp.Render(m.help.View(m.keys))
+}
+
+// updateJiraKeyPicker handles key events when the Jira key picker overlay is active.
+func (m Model) updateJiraKeyPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.nuclei) == 0 {
+		m.jiraKeyPickActive = false
+		return m, nil
+	}
+	keys := m.nuclei[m.cursor].JiraKeys
+	switch {
+	case matchKey(msg, m.keys.Cancel):
+		m.jiraKeyPickActive = false
+		return m, nil
+	case matchKey(msg, m.keys.Up):
+		if m.jiraKeyPickCursor > 0 {
+			m.jiraKeyPickCursor--
+		}
+	case matchKey(msg, m.keys.Down):
+		if m.jiraKeyPickCursor < len(keys)-1 {
+			m.jiraKeyPickCursor++
+		}
+	case matchKey(msg, m.keys.Submit):
+		if m.services.OpenJiraKey == nil || m.jiraKeyPickCursor >= len(keys) {
+			m.jiraKeyPickActive = false
+			return m, nil
+		}
+		svc := m.services.OpenJiraKey
+		key := keys[m.jiraKeyPickCursor]
+		m.jiraKeyPickActive = false
+		return m, func() tea.Msg { _ = svc(key); return nil }
+	}
+	return m, nil
+}
+
+// viewJiraKeyPicker renders the Jira key selection overlay.
+func (m Model) viewJiraKeyPicker() string {
+	if len(m.nuclei) == 0 {
+		return ""
+	}
+	keys := m.nuclei[m.cursor].JiraKeys
+	var sb strings.Builder
+	sb.WriteString(StyleTitle.Render("Open Jira ticket") + "\n")
+	sb.WriteString(StyleDim.Render(strings.Repeat("─", 26)) + "\n")
+	for i, key := range keys {
+		if i == m.jiraKeyPickCursor {
+			sb.WriteString(StyleSelected.Render("▶ "+key) + "\n")
+		} else {
+			sb.WriteString("  " + key + "\n")
+		}
+	}
+	sb.WriteString(StyleDim.Render(strings.Repeat("─", 26)) + "\n")
+	sb.WriteString(StyleHelp.Render("  enter open   esc cancel"))
+	return sb.String()
 }
