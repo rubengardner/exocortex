@@ -276,18 +276,31 @@ func (m Model) renderJiraColumn(colIdx int, status string, width, height int) st
 
 	var sb strings.Builder
 
-	// Column header with accent bar and double line separator.
-	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render("▌")
-	titleStyle := StyleDim
+	// Column header with prominent styling and double line separator.
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render("▌")
+	titleStyle := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
 	if colIdx == m.jiraColIdx {
-		titleStyle = StyleValue
+		titleStyle = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Underline(true)
 	}
-	count := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(fmt.Sprintf("%d", len(allIssues)))
+	count := lipgloss.NewStyle().Foreground(ColorWorking).Bold(true).Render(fmt.Sprintf("(%d)", len(allIssues)))
 	lowerStatus := strings.ToLower(status)
 	statusStr := strings.ToUpper(lowerStatus[:1]) + lowerStatus[1:]
+	// Compute how many chars are available for the title text.
+	// Fixed overhead: bar(1) + space(1) + two spaces(2) + count visual width.
+	overhead := 1 + 1 + 2 + lipgloss.Width(count)
+	maxTitle := width - 2 - overhead
+	if maxTitle < 1 {
+		maxTitle = 1
+	}
+	runes := []rune(statusStr)
+	if len(runes) > maxTitle {
+		statusStr = string(runes[:maxTitle-1]) + "…"
+	}
 	headerStr := bar + " " + titleStyle.Render(statusStr) + "  " + count
-	sb.WriteString(truncate(headerStr, width-2) + "\n")
+	sb.WriteString(headerStr + "\n")
 	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("═", clamp(width-2, 4, 60))) + "\n")
+	sb.WriteString("\n")
 
 	// Compute the visible window.
 	off := 0

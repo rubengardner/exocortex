@@ -74,7 +74,7 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorBorder).
 			Padding(1, 2).
-			MaxWidth(48)
+			MaxWidth(100)
 
 	StyleLabel = lipgloss.NewStyle().
 			Foreground(ColorDim).
