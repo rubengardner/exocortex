@@ -96,8 +96,8 @@ func DefaultKeys() KeyMap {
 			key.WithHelp("p", "toggle preview"),
 		),
 		Board: key.NewBinding(
-			key.WithKeys("b"),
-			key.WithHelp("b", "jira board"),
+			key.WithKeys("B"),
+			key.WithHelp("B", "jira board"),
 		),
 		GitHub: key.NewBinding(
 			key.WithKeys("G"),

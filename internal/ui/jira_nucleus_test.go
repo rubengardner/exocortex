@@ -61,7 +61,7 @@ func newJiraBoardModel(t *testing.T, extraSvc func(*ui.Services)) ui.Model {
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	// Open board (triggers async load).
-	m3, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m3, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")})
 	if cmd == nil {
 		t.Fatal("expected loadJiraBoardCmd from 'b' key")
 	}

@@ -49,7 +49,7 @@ func newBoardModel(nuclei []registry.Nucleus, addJiraKey func(string, string) er
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3, _ := m2.Update(nucleiLoaded(nuclei))
 	// Enter Jira board state.
-	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")})
 	// Simulate the board loading.
 	m5, _ := m4.Update(ui.JiraBoardLoadedMsg(cols, issues))
 	return m5.(ui.Model)
@@ -137,7 +137,7 @@ func TestJiraBoard_AKey_NoService_Noop(t *testing.T) {
 	m := ui.New(svc)
 	m2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m3, _ := m2.Update(nucleiLoaded(boardNuclei()))
-	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("B")})
 	m5, _ := m4.Update(ui.JiraBoardLoadedMsg(cols, issues))
 	m6, _ := press(m5, "a")
 	if m6.(ui.Model).JiraNucleusPick() {

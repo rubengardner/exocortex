@@ -435,6 +435,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear transient error on any keypress.
 		m.lastErr = ""
 
+		// Global navigation shortcuts — active from any state.
+		switch {
+		case matchKey(msg, m.keys.Board):
+			m.state = stateJiraBoard
+			if m.jiraIssues == nil && !m.jiraLoading {
+				m.jiraLoading = true
+				return m, m.loadJiraBoardCmd()
+			}
+			return m, nil
+		case matchKey(msg, m.keys.GitHub):
+			m.state = stateGitHubView
+			if m.githubPRs == nil && !m.githubLoading && m.services.LoadGitHubPRs != nil {
+				m.githubLoading = true
+				return m, m.loadGitHubPRsCmd()
+			}
+			return m, nil
+		}
+
 		switch m.state {
 		case stateList:
 			return m.updateNucleusList(msg)

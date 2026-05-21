@@ -88,22 +88,6 @@ func (m Model) updateNucleusList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return actionDoneMsg{err: svc(id)}
 		}
 
-	case matchKey(msg, m.keys.Board):
-		m.state = stateJiraBoard
-		if m.jiraIssues == nil && !m.jiraLoading {
-			m.jiraLoading = true
-			return m, m.loadJiraBoardCmd()
-		}
-		return m, nil
-
-	case matchKey(msg, m.keys.GitHub):
-		m.state = stateGitHubView
-		if m.githubPRs == nil && !m.githubLoading && m.services.LoadGitHubPRs != nil {
-			m.githubLoading = true
-			return m, m.loadGitHubPRsCmd()
-		}
-		return m, nil
-
 	case matchKey(msg, m.keys.OpenBrowser):
 		if len(m.nuclei) == 0 || m.services.OpenJiraKey == nil {
 			return m, nil
